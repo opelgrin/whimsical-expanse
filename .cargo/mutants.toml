@@ -30,11 +30,11 @@ exclude_re = [
     # panicking simulation. Testing these needs real time and waiting. The pure
     # pacing logic is tested in `pacer`, the stepping path in
     # `simulation_thread`, and the rest is checked by running the game.
-    'SimulationThread::set_speed',
-    'SimulationThread::shutdown',
-    'SimulationThread::stop_and_join',
-    'impl Drop for SimulationThread',
-    'impl Drop for MarkStoppedOnExit',
+    'SimulationHandle::set_speed',
+    'SimulationHandle::shutdown',
+    'SimulationHandle::stop_and_join',
+    'impl Drop for SimulationHandle',
+    'impl Drop for CloseFeedOnExit',
     ' in run$',
 ]
 
