@@ -1,0 +1,15 @@
+[package]
+name = "expanse-sim"
+description = "The simulation: world state, mechanics and snapshots. Runs without a window."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+expanse-core = { path = "../core" }
+
+[lints]
+workspace = true

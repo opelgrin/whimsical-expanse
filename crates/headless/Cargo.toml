@@ -1,0 +1,16 @@
+[package]
+name = "expanse-headless"
+description = "Runs the simulation without a window, as fast as possible, and reports its state hash."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+expanse-core = { path = "../core" }
+expanse-sim = { path = "../sim" }
+
+[lints]
+workspace = true

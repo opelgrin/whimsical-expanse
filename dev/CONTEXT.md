@@ -27,6 +27,15 @@ concept, never a rendering one.
 
 ## Entities
 
+**Motion**: a move from one tile to another over a span of ticks. The
+simulation knows only whole tiles; rendering interpolates along a motion.
+
+**Snapshot**: an owned projection of the world at one tick, published for
+presentation. It holds no references into the world.
+
+**State hash**: a hash of the complete simulation state, used to check that
+runs are reproducible. Stable for one binary only.
+
 **Entity**: anything with an identity in the world, such as an actor, an object
 or a unique item. Identified by a generational ID.
 

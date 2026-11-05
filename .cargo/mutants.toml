@@ -1,11 +1,43 @@
 # Configuration for cargo-mutants (see dev/TESTING.md).
 #
-# Each exclusion records a mutant that we accept as surviving, and why. Exclude
+# Each exclusion records mutants that we accept as surviving, and why. Exclude
 # only mutants whose effect no meaningful test could observe, never as a
 # shortcut around a missing test.
+
+# A mutant counts as caught if a test anywhere in the workspace catches it:
+# code is often best tested at a higher level than the crate it lives in.
+test_workspace = true
+
+# Baseline tests take well under a second. Mutants that hang (an endless loop)
+# are caught by this timeout, so keep it short.
+minimum_test_timeout = 5
 
 exclude_re = [
     # Degrades how well the hasher spreads keys, but still distinguishes them.
     # Only a statistical collision benchmark could observe it.
     'replace \^ with \| in FixedHasher::add_word',
+
+    # Equivalent: the shifted value's lowest bit is always 0, so `| 1` and
+    # `^ 1` give the same increment.
+    'replace \| with \^ in Rng::seeded',
+
+    # Error and usage messages: wording, not behaviour.
+    'impl fmt::Display for',
+    'report_usage_error',
+
+    # Real-time behaviour of the simulation thread: running at speed, speed
+    # changes, sleeping until the next tick, shutdown, and recovery from a
+    # panicking simulation. Testing these needs real time and waiting. The pure
+    # pacing logic is tested in `pacer`, the stepping path in
+    # `simulation_thread`, and the rest is checked by running the game.
+    'SimulationThread::set_speed',
+    'SimulationThread::shutdown',
+    'SimulationThread::stop_and_join',
+    'impl Drop for SimulationThread',
+    'impl Drop for MarkStoppedOnExit',
+    ' in run$',
 ]
+
+# The headless binary is checked by CI, which runs it twice and compares the
+# output, rather than by unit tests.
+exclude_globs = ["crates/headless/**"]
