@@ -1,7 +1,8 @@
 # Invariants
 
 The rules every change preserves. They change rarely, and only by explicit
-agreement, never as a side effect of an implementation.
+agreement, never as a side effect of an implementation. The structure that
+follows from them is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Reproducible, clock-free, headless simulation
 

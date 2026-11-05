@@ -1,5 +1,9 @@
 # Vision
 
+What the game is meant to be, readable without the code. How actors decide is in
+[AI.md](AI.md), the world's rules are in [SIMULATION.md](SIMULATION.md), and how
+it is built is in [dev/](../dev/README.md).
+
 > Working project name: *whimsical-expanse*. Not the final title.
 
 ## The idea
@@ -64,18 +68,18 @@ That implies:
 | Topic | Decision |
 |---|---|
 | Player | One character. No household. |
-| Death | The player character can die. Game over or a new character; any succession is TBD. Mortality comes early in development. |
+| Death | The player character can die. Game over or a new character: see [open questions](#open-questions). Mortality comes early in development. |
 | Generations | Aging, descendants and kids are not planned initially. If kids come later, think Fable II/III, not The Sims. |
 | World | Finite but large; exploration should be engaging. Wraps east–west (a cylinder), so climate can still follow latitude. |
 | Terrain and perception | The world has obstacles. Vision is a cone whose range and width vary by species, is blocked by obstacles and terrain, and may shrink at night. |
 | Map | Fog of war: the map shows what the player character has discovered. |
 | Tone | The spirit and ambiance of Stardew Valley, not dark fantasy. A rougher setting (for example with crime in settlements) could be a separate game mode the player opts into, if ever implemented. |
 | Danger | Graded by place. Settlements and their surroundings, such as farmland, are relatively safe, and guards may help. The deep forest and other wilds expose the character more. Dungeons and hostile areas are dangerous. |
-| Time | A calendar with days and seasons. Seasons affect the world, such as farming and the look of plants and trees (the asset pack has seasonal variants). The pace is relatively slow, to suit the chill tone. The exact length of a day is TBD, and may be configurable. |
+| Time | A calendar with days and seasons. Seasons affect the world, such as farming and the look of plants and trees (the asset pack has seasonal variants). The pace is relatively slow, to suit the chill tone. The length of a day is configurable; its default is an [open question](#open-questions). |
 | Controls | Primarily mouse. Ordinary clicks give **orders**, even with the character selected. Holding a modifier key (such as Alt, or its Mac equivalent) switches to **direct control**, which the character follows without weighing it. Direct control is deliberately secondary. The camera pans with the screen edges and WASD (ZQSD on AZERTY, i.e. physical key positions). |
-| Off-screen | Full simulation near the player, coarser far away. The world must actually progress elsewhere, not just look as if it did. Approach TBD (see open questions). |
+| Off-screen | Full simulation near the player, coarser far away. The world must actually progress elsewhere, not just look as if it did. The approach is an [open question](#open-questions). |
 | Combat | RimWorld-like: the character fights semi-autonomously, the player gives tactical orders, and the game can always be paused. |
-| Motivation | Sandbox, with aspirations as a likely bridge between watching and playing. Form TBD; can start barebones. |
+| Motivation | Sandbox, with aspirations as a likely bridge between watching and playing. The form is an [open question](#open-questions); it can start barebones. |
 | Economy | Very simple at first (buy, sell, a few prices). May grow if interesting. Never an economic simulation. |
 | Building | Minimal at first. Less central than in The Sims. |
 | Art | Based on a purchased asset pack that may be modified and extended. It cannot be redistributed, so it never enters git. Abstract placeholder art is used when the pack is absent. |
@@ -143,6 +147,10 @@ Technical slices come before it. *(Proposed; to be refined.)*
 ## Open questions
 
 - **Aspirations:** what form do they take?
+- **Succession:** when the player character dies, is it game over or a new
+  character, and how is the new one chosen?
+- **Length of a day:** the default, given the slow pace we want. It is
+  configurable in any case.
 - **Coarse simulation:** one option is the same simulation updated less often
   far away (every N ticks, staggered so the load stays smooth). The other is a
   separate low-fidelity path. The first is simpler and uses one code path, but

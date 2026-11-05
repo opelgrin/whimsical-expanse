@@ -1,8 +1,12 @@
 # Architecture
 
-> **Status: intended.** No code exists yet. This document describes the
-> structure we intend to build. As code arrives, each section is rewritten to
-> describe what is actually implemented.
+How the system is structured and why. Not the rules every change must keep (see
+[INVARIANTS.md](INVARIANTS.md)), not the plan (see [ROADMAP.md](ROADMAP.md)), not
+what is built right now (see [STATUS.md](STATUS.md) and the code).
+
+> **Status: partly built.** This describes the structure we intend. Where the code
+> disagrees, the code is current and this document needs fixing. As parts are
+> built, their sections are rewritten to describe what is implemented.
 
 The [invariants](INVARIANTS.md) are the rules; this document explains the
 structure that follows them.
@@ -44,18 +48,9 @@ crates/
   headless/  binary: runs the simulation without a window
 tools/
   cook/      asset cooking: licensed pack and placeholders
+  docs-check/  warns about documents large enough to need a review
 binaries: the game, the headless runner, diagnostics
 ```
-
-**Implemented so far:**
-
-- `core`: tiles and directions, `Tick`, the fixed hasher, and the PCG32
-  generator with streams derived from the seed and stable keys;
-- `sim`: a minimal world with one wandering entity, snapshots and the state
-  hash;
-- `app`: the tick pacer and the simulation thread;
-- `headless`: runs N ticks from a seed and prints the state hash. CI runs it
-  twice on each platform and compares the output.
 
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
 `app`, and Cargo enforces this.
@@ -161,7 +156,8 @@ Ordinary items are values inside inventories, not entities (see
 ## Content
 
 Definitions (items, species, drives, methods…) are loaded and validated into an
-immutable catalog before the simulation starts. The file format is still open.
+immutable catalog before the simulation starts. The file format is open, and so is
+whether `serde` earns its place.
 
 ## Assets
 
@@ -179,10 +175,3 @@ immutable catalog before the simulation starts. The file format is still open.
   and the command that reproduces each case.
 - In-game **inspection**: candidate goals and their values, goal chains, and
   knowledge. This serves debugging and the player alike.
-
-## Open technical questions
-
-- The content file format, and whether `serde` earns its place.
-- The default length of a day.
-- The approach to coarse simulation far from the player.
-- CI across the three platforms.
