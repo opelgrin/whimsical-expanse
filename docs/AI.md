@@ -254,3 +254,5 @@ interactions. Starting points:
 - **Method authoring:** what content declares, what objects advertise, and how
   deep chains may go.
 - **Far-away actors:** what changes in decisions when an actor is updated rarely.
+  This is the decision side of the [coarse simulation](VISION.md#open-questions)
+  question, which holds the options.

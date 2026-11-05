@@ -156,7 +156,8 @@ Ordinary items are values inside inventories, not entities (see
 ## Content
 
 Definitions (items, species, drives, methods…) are loaded and validated into an
-immutable catalog before the simulation starts. The file format is still open.
+immutable catalog before the simulation starts. The file format is open, and so is
+whether `serde` earns its place.
 
 ## Assets
 
@@ -174,10 +175,3 @@ immutable catalog before the simulation starts. The file format is still open.
   and the command that reproduces each case.
 - In-game **inspection**: candidate goals and their values, goal chains, and
   knowledge. This serves debugging and the player alike.
-
-## Open technical questions
-
-- The content file format, and whether `serde` earns its place.
-- The default length of a day.
-- The approach to coarse simulation far from the player.
-- CI across the three platforms.
