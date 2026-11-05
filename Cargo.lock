@@ -15,6 +15,10 @@ name = "expanse-core"
 version = "0.1.0"
 
 [[package]]
+name = "expanse-docs-check"
+version = "0.1.0"
+
+[[package]]
 name = "expanse-headless"
 version = "0.1.0"
 dependencies = [

@@ -1,8 +1,12 @@
 # Architecture
 
-> **Status: intended.** No code exists yet. This document describes the
-> structure we intend to build. As code arrives, each section is rewritten to
-> describe what is actually implemented.
+How the system is structured and why. Not the rules every change must keep (see
+[INVARIANTS.md](INVARIANTS.md)), not the plan (see [ROADMAP.md](ROADMAP.md)), not
+what is built right now (see [STATUS.md](STATUS.md) and the code).
+
+> **Status: partly built.** This describes the structure we intend. Where the code
+> disagrees, the code is current and this document needs fixing. As parts are
+> built, their sections are rewritten to describe what is implemented.
 
 The [invariants](INVARIANTS.md) are the rules; this document explains the
 structure that follows them.
@@ -44,18 +48,9 @@ crates/
   headless/  binary: runs the simulation without a window
 tools/
   cook/      asset cooking: licensed pack and placeholders
+  docs-check/  warns about documents large enough to need a review
 binaries: the game, the headless runner, diagnostics
 ```
-
-**Implemented so far:**
-
-- `core`: tiles and directions, `Tick`, the fixed hasher, and the PCG32
-  generator with streams derived from the seed and stable keys;
-- `sim`: a minimal world with one wandering entity, snapshots and the state
-  hash;
-- `app`: the tick pacer and the simulation thread;
-- `headless`: runs N ticks from a seed and prints the state hash. CI runs it
-  twice on each platform and compares the output.
 
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
 `app`, and Cargo enforces this.

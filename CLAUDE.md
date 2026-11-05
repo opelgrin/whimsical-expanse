@@ -6,7 +6,7 @@ This is a working name. The project is at milestone M0 (see the [roadmap](dev/RO
 ## Documentation
 
 At the start of a session, read the [documentation map](dev/README.md), then the
-vision, the glossary and the invariants it points to. Follow the map's rules on
+status, the vision, the glossary and the invariants it points to. Follow the map's rules on
 where information goes and which source has authority.
 
 ## Working rules

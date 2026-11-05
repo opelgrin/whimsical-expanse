@@ -31,14 +31,15 @@ The initial steps, not the full roadmap. It changes as we learn.
 
 One thin cut through every layer.
 
-- Cargo workspace and crate skeletons.
-- Window (winit + wgpu), camera with panning and zoom.
-- Simulation thread, tick loop, snapshots and interpolated motion.
-- One entity moving across a flat grid.
-- Headless runner, and a determinism test: the same seed gives the same world
+- [x] Cargo workspace and crate skeletons.
+- [ ] Window (winit + wgpu), camera with panning and zoom.
+- [x] Simulation thread, tick loop and snapshots.
+- [ ] Interpolated motion.
+- [x] One entity moving across a flat grid.
+- [x] Headless runner, and a determinism test: the same seed gives the same world
   state hash after N ticks.
-- egui debug overlay.
-- CI on Linux, Windows and macOS.
+- [ ] egui debug overlay.
+- [x] CI on Linux, Windows and macOS.
 
 **Exit:** the game shows an entity moving on a grid. Headless runs give the same
 hash every time, on every platform.
