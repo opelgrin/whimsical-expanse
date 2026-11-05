@@ -41,6 +41,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # Tests compare runs within one process. This compares two processes,
+      # which also catches anything that varies per process.
+      - name: Headless runs are reproducible
+        shell: bash
+        run: |
+          cargo build --release --locked -p expanse-headless
+          first=$(cargo run --release --locked -q -p expanse-headless -- --seed 1 --ticks 100000)
+          second=$(cargo run --release --locked -q -p expanse-headless -- --seed 1 --ticks 100000)
+          echo "first:  $first"
+          echo "second: $second"
+          [ "$first" = "$second" ]
 
   # The only check required by branch protection. Jobs above can be renamed or
   # added without touching the repository settings: list them under `needs`.

@@ -40,11 +40,22 @@ crates/
   ai/        drives, selection, methods, activities
   content/   loading and validating content definitions
   render/    wgpu: terrain, sprites, overlays
-  app/       window, input, simulation thread, UI
+  app/       tick pacing, simulation thread, window, input, UI
+  headless/  binary: runs the simulation without a window
 tools/
   cook/      asset cooking: licensed pack and placeholders
-binaries: the game, a headless runner, diagnostics
+binaries: the game, the headless runner, diagnostics
 ```
+
+**Implemented so far:**
+
+- `core`: tiles and directions, `Tick`, the fixed hasher, and the PCG32
+  generator with streams derived from the seed and stable keys;
+- `sim`: a minimal world with one wandering entity, snapshots and the state
+  hash;
+- `app`: the tick pacer and the simulation thread;
+- `headless`: runs N ticks from a seed and prints the state hash. CI runs it
+  twice on each platform and compares the output.
 
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
 `app`, and Cargo enforces this.
@@ -94,6 +105,13 @@ simulation publishes a **snapshot**: an owned projection of what is visible. A
 newer snapshot replaces one not yet drawn. Rendering interpolates motion between
 two ticks and never extrapolates. Events (for notifications and the chronicle)
 travel through a separate *ordered* channel, because snapshots can be skipped.
+
+The simulation thread reaches other threads only through two slots, each
+behind a short lock that is never held during a tick or a draw. Controls
+(speed, single steps, shutdown) are latest-value-wins, so no backlog of
+commands can build up. The latest snapshot replaces any snapshot not yet taken.
+The tick pacer is pure: it receives elapsed time and returns the number of due
+ticks, so it is tested without a clock.
 
 **Player commands** are applied between ticks and recorded with their tick, so a
 run can be replayed.
