@@ -23,9 +23,17 @@ which can be read without the code.
 
 If a kind of information has no row, add a row, not a new document.
 
-Documents planned once they have content: `specs/` (requirements for a work item),
-`proposals/` (designs still under discussion) and `findings/` (facts and dead ends
-worth keeping, with their evidence).
+Folders planned, each created together with its first document and not before:
+
+- `specs/`: requirements for a work item. Deleted when the work is done.
+- `proposals/`: designs still under discussion. Deleted once adopted (what lasts
+  moves to its home) or rejected (a rejection worth remembering becomes a
+  decision record).
+- `findings/`: facts and dead ends worth keeping, with their evidence.
+- `decisions/`: records of costly-to-reverse choices, once about five qualify (see
+  [Keeping documents navigable](#keeping-documents-navigable)).
+- `architecture/`: `ARCHITECTURE.md` split by subsystem, if its size review calls
+  for it. The top-level file would stay as a short overview.
 
 ## Orientation
 
