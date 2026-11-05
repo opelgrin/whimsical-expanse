@@ -89,24 +89,40 @@ pub type FixedHashSet<T> = std::collections::HashSet<T, FixedBuildHasher>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::hash::{BuildHasher, Hash};
 
-    fn hash_of<T: Hash>(value: &T) -> u64 {
-        FixedBuildHasher::default().hash_one(value)
+    fn hash_with(write: impl FnOnce(&mut FixedHasher)) -> u64 {
+        let mut hasher = FixedHasher::default();
+        write(&mut hasher);
+        hasher.finish()
     }
 
+    /// Catches a write path that ignores its input. Maps would still work, but
+    /// every key would collide and lookups would silently degrade.
     #[test]
-    fn equal_values_hash_equally() {
-        assert_eq!(hash_of(&"wolf"), hash_of(&String::from("wolf")));
-        assert_eq!(hash_of(&(3_u32, -7_i64)), hash_of(&(3_u32, -7_i64)));
+    fn every_write_path_distinguishes_its_input() {
+        assert_ne!(hash_with(|h| h.write_u8(1)), hash_with(|h| h.write_u8(2)));
+        assert_ne!(hash_with(|h| h.write_u16(1)), hash_with(|h| h.write_u16(2)));
+        assert_ne!(hash_with(|h| h.write_u32(1)), hash_with(|h| h.write_u32(2)));
+        assert_ne!(hash_with(|h| h.write_u64(1)), hash_with(|h| h.write_u64(2)));
+        assert_ne!(
+            hash_with(|h| h.write_usize(1)),
+            hash_with(|h| h.write_usize(2))
+        );
+        // Equal first word, different trailing bytes: catches dropping the
+        // bytes that do not fill a whole 8-byte word.
+        assert_ne!(
+            hash_with(|h| h.write(b"abcdefgh-1")),
+            hash_with(|h| h.write(b"abcdefgh-2")),
+        );
+        // Different first word: catches ignoring the full words.
+        assert_ne!(
+            hash_with(|h| h.write(b"abcdefgh-1")),
+            hash_with(|h| h.write(b"zbcdefgh-1")),
+        );
     }
 
-    #[test]
-    fn different_values_usually_hash_differently() {
-        assert_ne!(hash_of(&"wolf"), hash_of(&"deer"));
-        assert_ne!(hash_of(&1_u64), hash_of(&2_u64));
-    }
-
+    /// Catches a randomly seeded hasher creeping back in: two maps built in the
+    /// same process would then get different seeds and iterate differently.
     #[test]
     fn iteration_order_is_reproducible() {
         let build = || {

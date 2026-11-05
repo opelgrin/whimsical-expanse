@@ -1,0 +1,11 @@
+# Configuration for cargo-mutants (see dev/TESTING.md).
+#
+# Each exclusion records a mutant that we accept as surviving, and why. Exclude
+# only mutants whose effect no meaningful test could observe, never as a
+# shortcut around a missing test.
+
+exclude_re = [
+    # Degrades how well the hasher spreads keys, but still distinguishes them.
+    # Only a statistical collision benchmark could observe it.
+    'replace \^ with \| in FixedHasher::add_word',
+]

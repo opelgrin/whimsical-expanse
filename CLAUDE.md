@@ -15,5 +15,8 @@ where information goes and which source has authority.
   Justify every dependency (see [architecture](dev/ARCHITECTURE.md#technology)).
 - Follow the [style guide](dev/STYLE.md). Before committing, run `cargo fmt`,
   `cargo clippy --workspace --all-targets` and `cargo test --workspace`.
+- Follow the [testing principles](dev/TESTING.md): every test names the bug it
+  catches, builds what it relies on, and never depends on defaults. Run
+  `cargo mutants` on your changes before opening a pull request.
 - Never commit to `main`: work on a branch and open a pull request.
 - Examples in design documents are illustrative, not agreed content.
