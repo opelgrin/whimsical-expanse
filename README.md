@@ -21,3 +21,9 @@ in Rust.
 - [Developer documentation](dev/README.md): architecture, invariants and glossary.
 
 This is a non-commercial hobby project.
+
+## License
+
+The code and documentation are licensed under the [MIT License](LICENSE).
+The art used in released builds comes from a third-party asset pack under its
+own licence, and is not part of this repository.
