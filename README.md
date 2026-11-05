@@ -11,7 +11,7 @@ It takes inspiration from The Sims, Stardew Valley and RimWorld, and is written
 in Rust.
 
 > [!NOTE]
-> The project is in its design phase, and there is no playable build yet.
+> The project is in early development, and there is no playable build yet.
 
 ## Documentation
 

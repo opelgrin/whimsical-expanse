@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/opelgrin/whimsical-expanse"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+# Groups first (lower priority), so individual lints below can override them.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Every exception must say why, and must disappear once it is no longer needed.
+allow_attributes = "warn"
+allow_attributes_without_reason = "deny"
+
+# No leftovers, no silent assumptions.
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+
+# Any unsafe block must justify itself.
+undocumented_unsafe_blocks = "deny"

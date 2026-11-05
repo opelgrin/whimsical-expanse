@@ -20,8 +20,10 @@ comparable. A world that lives without a player must also run without a window.
 ## Deterministic iteration and randomness
 
 **Rule:** Nothing that affects outcomes iterates a container whose order varies
-between runs. In particular, the standard `HashMap` and `HashSet` with their
-default hasher are not used for this. Randomness comes from streams derived from
+between runs. The standard `HashMap` and `HashSet` with their default, randomly
+seeded hasher are not used at all; maps with a fixed hasher are used instead.
+When iteration order affects an outcome, the order is a meaningful one: an
+ordered container or an explicit sort. Randomness comes from streams derived from
 the seed and a stable identity, such as an actor and a tick or period. Parallel
 work never draws from a shared generator.
 

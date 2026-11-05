@@ -6,15 +6,19 @@ glossary only: rules are in [INVARIANTS.md](INVARIANTS.md) and design is in
 
 ## Time
 
-**Tick**: the smallest step of the simulation. Everything happens in whole ticks.
+**Tick**: the smallest step of the simulation, and the unit of action time.
+Everything happens in whole ticks.
 
-**Calendar**: days and seasons, derived from the tick count.
+**Action time**: how long physical, visible things take, measured in ticks.
+
+**Calendar**: time of day, days and seasons, derived from the tick count. The
+length of a day in ticks is configurable.
 
 **Frame**: one image drawn. Frames and ticks are independent.
 
 ## Space
 
-**Tile**: one cell of the world grid.
+**Tile**: one cell of the world grid. Positions in the simulation are whole tiles.
 
 **Chunk**: a square block of tiles, stored and loaded as a unit. A storage
 concept, never a rendering one.
