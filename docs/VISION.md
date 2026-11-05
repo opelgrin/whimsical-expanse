@@ -1,5 +1,9 @@
 # Vision
 
+What the game is meant to be, readable without the code. How actors decide is in
+[AI.md](AI.md), the world's rules are in [SIMULATION.md](SIMULATION.md), and how
+it is built is in [dev/](../dev/README.md).
+
 > Working project name: *whimsical-expanse*. Not the final title.
 
 ## The idea

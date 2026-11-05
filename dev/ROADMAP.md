@@ -1,6 +1,9 @@
 # Roadmap
 
-The initial steps, not the full roadmap. It changes as we learn.
+The order of milestones and what each delivers: the initial steps, not the full
+roadmap. It changes as we learn. Not the current position (see
+[STATUS.md](STATUS.md)), the structure (see [ARCHITECTURE.md](ARCHITECTURE.md))
+or the game's design (see [docs/](../docs/)).
 
 ## How this roadmap works
 

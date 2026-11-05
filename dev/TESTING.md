@@ -1,5 +1,8 @@
 # Testing
 
+How we test and which tests are worth writing. Not how to write the code itself
+(see [STYLE.md](STYLE.md)).
+
 We value a small number of meaningful tests over a large number of weak ones.
 Every test costs CI time and maintenance, and a test that breaks for no reason
 teaches people to ignore failures. Less is more.
