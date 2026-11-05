@@ -17,12 +17,20 @@ structure that follows them.
   its place: large, hard-to-write pieces (windowing, GPU, UI) do; small utilities
   we can write ourselves, tailored to our needs, do not. The RNG, the entity
   storage and deterministic maps are written in-house.
+- **bytemuck** for GPU data. It checks at compile time that a struct can be
+  viewed as bytes (no padding, `repr(C)`), which hand-written `unsafe` cannot
+  check. It is already a dependency of the egui/wgpu stack.
+- **Lints and formatting** are described in [STYLE.md](STYLE.md).
 
 Bevy was considered and rejected. Its ECS and scheduler would own the world
 and the frame. That conflicts with an engine-independent simulation on its own
 thread, and Bevy's breaking releases every few months add ongoing cost.
 
 ## Crates
+
+Packages are named `expanse-<crate>` (for example `expanse-core`), because
+`core` is the name of Rust's own core library. Crates are created when they
+have content, not in advance.
 
 ```text
 crates/
@@ -41,6 +49,23 @@ binaries: the game, a headless runner, diagnostics
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
 `app`, and Cargo enforces this.
 
+## Time
+
+There are two clocks:
+
+- **Action time** is measured in **ticks**. A tick is a fixed unit of time for
+  physical, visible things, such as walking one tile or swinging a tool. The
+  simulation runs **20 ticks per second at 1×**, and 40 or 60 at 2× or 3×. The
+  tick count is a `u64`.
+- **Calendar time** (time of day, days, seasons) is derived from the tick count.
+  **The length of a day in ticks is configurable**, and the slow pace of the
+  game comes from it. For example, a 30-minute day at 1× is 36,000 ticks.
+
+Physical durations are written in ticks. Processes that live at the scale of a
+day (needs, growth, routines, seasons) are written in calendar units ("per day")
+and converted. Changing the length of a day therefore changes the pace of life,
+but never how fast anything moves on screen.
+
 ## Runtime shape
 
 The simulation runs on its own thread and owns the world. Each tick:
@@ -57,6 +82,12 @@ The simulation runs on its own thread and owns the world. Each tick:
 Parallel phases use a thread pool. The borrow checker expresses
 compute-then-commit directly: shared borrows while computing, an exclusive
 borrow while committing.
+
+Rendering and simulation are independent. If a tick is slow, rendering keeps
+running: the camera, the UI and the controls stay responsive, and entities hold
+their last position until the next snapshot. If the simulation falls too far
+behind the selected speed, it drops the time it owes rather than trying to
+catch up indefinitely.
 
 **Presentation** never reads the world directly. After each tick, the
 simulation publishes a **snapshot**: an owned projection of what is visible. A
@@ -99,6 +130,9 @@ Ordinary items are values inside inventories, not entities (see
 
 ## World
 
+- **Positions in the simulation are whole tiles.** An entity moves to a
+  neighbouring tile over a number of ticks. Smooth motion exists only in
+  rendering.
 - Tiles grouped into chunks. The world is finite and wraps east–west, so every
   distance and heuristic is wrap-aware.
 - The world has obstacles. Vision cones are occluded by obstacles and terrain.
@@ -131,6 +165,6 @@ immutable catalog before the simulation starts. The file format is still open.
 ## Open technical questions
 
 - The content file format, and whether `serde` earns its place.
-- The tick rate and how ticks map to the calendar.
+- The default length of a day.
 - The approach to coarse simulation far from the player.
 - CI across the three platforms.

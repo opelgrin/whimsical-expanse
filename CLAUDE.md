@@ -1,7 +1,7 @@
 # whimsical-expanse
 
 A chill, sandbox 2D fantasy life sim and RPG with autonomous actors, in Rust.
-This is a working name. The project is in its design phase, with no code yet.
+This is a working name. The project is at milestone M0 (see the [roadmap](dev/ROADMAP.md)).
 
 ## Documentation
 
@@ -13,6 +13,7 @@ where information goes and which source has authority.
 
 - Prefer the standard library and our own small code to new crates.
   Justify every dependency (see [architecture](dev/ARCHITECTURE.md#technology)).
-- Never use the default `HashMap`/`HashSet` in anything that affects simulation
-  outcomes (see [invariants](dev/INVARIANTS.md)).
+- Follow the [style guide](dev/STYLE.md). Before committing, run `cargo fmt`,
+  `cargo clippy --workspace --all-targets` and `cargo test --workspace`.
+- Never commit to `main`: work on a branch and open a pull request.
 - Examples in design documents are illustrative, not agreed content.

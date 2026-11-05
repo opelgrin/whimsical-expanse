@@ -15,10 +15,10 @@ which can be read without the code.
 | What must every change preserve? | [INVARIANTS.md](INVARIANTS.md) |
 | How does the system fit together? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | What comes next? | [ROADMAP.md](ROADMAP.md) |
+| How do we write Rust here? | [STYLE.md](STYLE.md) |
 | What does the system do right now? | the code and its tests |
 
-Documents planned once they have content: testing policy, a Rust style
-guide, and `specs/` (requirements for a work item), `proposals/` (designs still
+Documents planned once they have content: testing policy, and `specs/` (requirements for a work item), `proposals/` (designs still
 under discussion) and `findings/` (facts and dead ends worth keeping, with their
 evidence).
 

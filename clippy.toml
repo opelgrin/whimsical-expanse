@@ -1,0 +1,14 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
+
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "its default hasher is seeded randomly per process; use FixedHashMap, or BTreeMap when iteration order matters" },
+    { path = "std::collections::HashSet", reason = "its default hasher is seeded randomly per process; use FixedHashSet, or BTreeSet when iteration order matters" },
+    { path = "std::hash::RandomState", reason = "seeded randomly per process; breaks reproducibility" },
+]
+
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "the simulation never reads the wall clock; only real-time pacing and presentation may, with an explicit expect" },
+    { path = "std::time::SystemTime::now", reason = "the simulation never reads the wall clock; only real-time pacing and presentation may, with an explicit expect" },
+]
