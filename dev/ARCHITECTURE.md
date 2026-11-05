@@ -10,7 +10,7 @@ structure that follows them.
 ## Technology
 
 - **Rust**, stable toolchain, as one Cargo workspace.
-- **Platforms:** Linux, Windows and macOS.
+- **Platforms:** Linux, Windows and macOS (Apple silicon only).
 - **winit** (windows and input), **wgpu** (rendering), **egui** (debug UI, and a
   first version of the game UI).
 - **Dependencies are minimal.** Use the standard library first. A crate must earn

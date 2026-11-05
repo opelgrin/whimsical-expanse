@@ -79,7 +79,7 @@ That implies:
 | Economy | Very simple at first (buy, sell, a few prices). May grow if interesting. Never an economic simulation. |
 | Building | Minimal at first. Less central than in The Sims. |
 | Art | Based on a purchased asset pack that may be modified and extended. It cannot be redistributed, so it never enters git. Abstract placeholder art is used when the pack is absent. |
-| Platforms | Linux, Windows and macOS. |
+| Platforms | Linux, Windows and macOS (Apple silicon only). |
 | Technology | Rust. Technical choices are recorded in the developer documentation. |
 
 ## Non-goals
