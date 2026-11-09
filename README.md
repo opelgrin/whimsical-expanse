@@ -22,25 +22,12 @@ in Rust.
 
 ## Building and checking
 
-```sh
-# Debug build of the whole workspace
-cargo build --workspace
+The commands are in the [justfile](justfile). Run `just` to list them. Each one
+is a plain cargo command, so the file also works as a reference without `just`,
+which is [installed separately](https://just.systems/man/en/packages.html).
 
-# Optimised release build of the headless binary
-cargo build --release -p expanse-headless
-
-# Checks, as run before committing and in CI
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-
-# Mutation testing of your changes, before opening a pull request
-cargo install --locked cargo-mutants
-git diff main > changes.diff && cargo mutants --in-diff changes.diff
-```
-
-See the [testing principles](dev/TESTING.md) and the
-[style guide](dev/STYLE.md) for what the checks expect.
+For what the checks expect, see the [testing principles](dev/TESTING.md) and the
+[style guide](dev/STYLE.md).
 
 ## License
 

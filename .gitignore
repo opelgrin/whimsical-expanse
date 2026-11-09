@@ -3,3 +3,4 @@
 
 # cargo-mutants output
 mutants.out*/
+mutants.diff
