@@ -6,7 +6,7 @@ covers the rest.
 
 ## Tooling
 
-- **Formatting:** `rustfmt` with default settings. CI runs `cargo fmt --check`.
+- **Formatting:** `rustfmt` with default settings. CI enforces it.
 - **Lints:** declared once in the workspace `Cargo.toml`, and every crate inherits
   them with `[lints] workspace = true`. CI runs clippy with `-D warnings`, so every
   warning fails the build.
@@ -21,8 +21,6 @@ covers the rest.
     presentation.
 - **Toolchain:** pinned in `rust-toolchain.toml`, so local builds and CI use the
   same compiler.
-
-Before pushing: `cargo fmt`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`.
 
 ## Exceptions to lints
 

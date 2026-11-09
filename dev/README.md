@@ -18,6 +18,7 @@ which can be read without the code.
 | Where are we right now? | [STATUS.md](STATUS.md) |
 | How do we write Rust here? | [STYLE.md](STYLE.md) |
 | How do we test? | [TESTING.md](TESTING.md) |
+| How do we run the checks and other commands? | the [justfile](../justfile); `just` lists the recipes |
 | Why was a structural choice made? | the rationale beside that structure, in [ARCHITECTURE.md](ARCHITECTURE.md) or [INVARIANTS.md](INVARIANTS.md) |
 | What does the system do right now? | the code and its tests |
 

@@ -74,7 +74,7 @@ the code's own formula proves nothing.
 | Scenario | a small hand-built world and a behaviour, such as fleeing a perceived threat | every CI run |
 | Simulation | determinism over a short run; one smoke run of the representative content that checks properties only (no panic, no stuck actors) | every CI run, kept short |
 | Diagnostics | many seeds and long runs, looking for looping or stalled actors | manually or on a schedule |
-| Mutation | `cargo-mutants` | on each pull request's changes, and occasionally in full |
+| Mutation | `cargo-mutants` | locally, on your changes before review, and occasionally in full; not in CI |
 
 Tests sit next to their code (`#[cfg(test)] mod tests`). Cross-crate scenarios go
 in a crate's `tests/` directory.
@@ -93,10 +93,9 @@ that some test fails. A surviving mutant points to a missing or weak test. It is
 a tool to install (`cargo install --locked cargo-mutants`), not a project
 dependency.
 
-- Run it on your changes before opening a pull request:
-  `git diff main > changes.diff && cargo mutants --in-diff changes.diff` (keep
-  the diff file outside the repository, or delete it afterwards). Run it in full
-  occasionally with `cargo mutants --workspace`.
+- Run it on your changes before they are reviewed: `just mutants`, which diffs
+  against `main` (or `just mutants <branch>`). Run it in full occasionally with
+  `just mutants-full`.
 - **Do not chase a perfect score.** Some mutants change nothing a meaningful test
   could observe, such as equivalent rewrites, `Debug` output or log messages.
   Record those in `.cargo/mutants.toml` with the reason, rather than writing tests
