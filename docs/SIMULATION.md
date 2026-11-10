@@ -32,7 +32,8 @@ and drive values alone.
 An item kind (content) has:
 
 - **tags**, a vocabulary shared by items, bodies and drives;
-- a weight, a base value and a stack size;
+- a weight and a base value (and a stack size, if items turn out to stack: see
+  [Representation](#representation));
 - **uses**, typically one to three: consume, equip, plant, read, give…
 - for each use, a duration and **effects**, typically one to four.
 
@@ -64,19 +65,60 @@ sweet", "hates fish"). They can carry whims ("fancies something sweet today").
 
 ### Representation
 
-- Ordinary items are **values** in an inventory: a kind, a quantity and a small
-  amount of state that splits stacks. **Quality** is included.
-  **Spoilage** is deferred.
-- Only unique or stateful items (a named sword, a letter) are entities.
+An **item kind** (above) is content: immutable and shared. What an actor carries
+or what lies in the world is some representation of items of a kind. Quality is
+expected to be part of it. Spoilage is deferred.
+
+**Open question: how items are represented.** Undecided, and it shapes
+inventories, saves, the knowledge system and what the AI can refer to. The two
+candidates below are illustrative, not agreed.
+
+- **Items as values.** An inventory holds values: a kind, a quantity and a small
+  amount of state. Identical items can be counted, and may stack. An item that
+  must be individually tracked (a named sword, a specific gem) is a value that
+  might need its own instance id and its own state and never merges; its
+  uniqueness is enforced by game logic like any other item rule. Items in the
+  world sit in containers (a pile, a chest) that are entities holding an
+  inventory. Cheap for large numbers of identical goods; per-item identity and
+  state are added to the value, not native to it.
+- **Items as entities.** Every item is an entity with its own identity and
+  state. There are no stacks: a quantity is several entities. One concept, and
+  per-item state (quality, spoilage, durability) and items in the world, in
+  containers or in hands all work the same way. The cost is an entity per item in
+  every farm and stockpile, with the churn of creating and destroying them in
+  the stores, the state hash and the saves.
+
+What decides it:
+
+- how often beliefs, goals and mechanics refer to **one specific item** across
+  holders and places ("recover my sword", "ask where the heirloom is", ownership
+  or history) rather than **any item of a kind, tag or effect** ("have a
+  bottle", "deliver grain", "eat something nourishing"). If specific-item
+  references are rare exceptions, values with an optional instance id keep bulk
+  goods cheap; if they are common, bolting identity onto values rebuilds
+  entities by hand;
+- how much per-item state every item carries (quality, durability, spoilage);
+- how many items the simulation must hold at once.
+
+Mixing both models, with generic goods as values and special items as entities,
+is the option to avoid: every inventory and mechanic would handle two kinds of
+item.
 
 ### Items and decisions
 
-- **Goals concern effects, not items.** A drive proposes "be nourished", not
-  "eat bread". Methods are indexed by effect, with the actor's body rules
-  applied. The planner never scans the item catalogue.
-- **Tools have no value of their own.** A tool is a precondition of a method and
-  gets its value through the goal chain. Nobody acquires things in advance
-  unless a drive asks for it ("keep a food reserve", "be well equipped").
+- **Needs ask for effects, not specific items.** Hunger proposes "be nourished",
+  not "eat bread"; a gift proposes social value for the recipient. Items supply
+  methods through the effects they advertise, with the actor's body rules and
+  preferences applied, so new items work without changing drives or scanning the
+  item catalogue.
+- **Goals and subgoals can still ask for items.** A method can require a tool or
+  ingredient by tag or kind ("needs a bottle", "needs seed"), and a drive, trade
+  or request can target an item kind or a specific item ("keep a food reserve",
+  "give grain to Y", "recover my sword"). Whether an item is chosen for its
+  effect, its kind or its identity depends on the goal.
+- **Tools have no value of their own.** Unless a drive values having an item
+  directly ("keep a food reserve", "own a sword"), an item gets its value only
+  through the goal chain that needs it.
 - **The mind values believed effects; the simulation applies true effects.**
 
 ## Knowledge

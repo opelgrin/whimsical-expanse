@@ -135,8 +135,9 @@ time, since mechanics are typed code. An ECS's generic machinery (dynamic types,
 queries, schedulers) brings no benefit to that case. Moving to an ECS crate later
 would be a mechanical change.
 
-Ordinary items are values inside inventories, not entities (see
-[items](../docs/SIMULATION.md#items)).
+How items are represented, as values in inventories or as entities, is an open
+design question (see [items](../docs/SIMULATION.md#representation)). Until it is
+decided, do not build on either assumption.
 
 ## World
 
