@@ -135,9 +135,9 @@ time, since mechanics are typed code. An ECS's generic machinery (dynamic types,
 queries, schedulers) brings no benefit to that case. Moving to an ECS crate later
 would be a mechanical change.
 
-How items are represented, as values in inventories or as entities, is an open
-design question (see [items](../docs/SIMULATION.md#representation)). Until it is
-decided, do not build on either assumption.
+Items (and stacks of identical items) are entities too, so ground items, carried
+items and per-item capabilities use the same entity IDs and typed stores as
+actors and objects (see [items](../docs/SIMULATION.md#representation)).
 
 ## World
 
