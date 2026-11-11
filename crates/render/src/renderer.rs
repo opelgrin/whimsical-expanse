@@ -3,10 +3,10 @@
 use std::error::Error;
 use std::fmt;
 
-use bytemuck::{Pod, Zeroable};
 use expanse_sim::Snapshot;
 
 use crate::camera::{Camera, CameraUniform, Viewport};
+use crate::scene::{QuadInstance, build_instances};
 
 /// Errors that can prevent creating or running the renderer.
 #[derive(Debug)]
@@ -46,28 +46,16 @@ impl Error for RenderError {
     }
 }
 
-/// One axis-aligned rectangle in world-tile coordinates with a linear RGBA colour.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct QuadInstance {
-    origin: [f32; 2],
-    size: [f32; 2],
-    color: [f32; 4],
-}
-
-impl QuadInstance {
+fn quad_instance_layout() -> wgpu::VertexBufferLayout<'static> {
     const ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
         0 => Float32x2,
         1 => Float32x2,
         2 => Float32x4,
     ];
-
-    const fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBUTES,
-        }
+    wgpu::VertexBufferLayout {
+        array_stride: size_of::<QuadInstance>() as wgpu::BufferAddress,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &ATTRIBUTES,
     }
 }
 
@@ -80,10 +68,6 @@ const BACKGROUND_CLEAR: wgpu::Color = wgpu::Color {
     b: 0.045,
     a: 1.0,
 };
-const GRASS_LIGHT: [f32; 4] = [0.165, 0.345, 0.145, 1.0];
-const GRASS_DARK: [f32; 4] = [0.135, 0.295, 0.120, 1.0];
-const ENTITY_SHADOW: [f32; 4] = [0.040, 0.075, 0.035, 1.0];
-const ENTITY_BODY: [f32; 4] = [0.880, 0.560, 0.140, 1.0];
 
 /// Owns the `wgpu` surface, device, and instanced 2D quad pipeline.
 pub struct Renderer<'window> {
@@ -203,7 +187,7 @@ impl<'window> Renderer<'window> {
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        self.build_instances(camera, viewport, snapshot);
+        build_instances(&mut self.instances, camera, viewport, snapshot);
         if !self.instances.is_empty() {
             self.ensure_instance_capacity(self.instances.len());
             self.queue.write_buffer(
@@ -256,49 +240,6 @@ impl<'window> Renderer<'window> {
             self.surface.configure(&self.device, &self.surface_config);
         }
         Ok(())
-    }
-
-    fn build_instances(&mut self, camera: &Camera, viewport: Viewport, snapshot: &Snapshot) {
-        self.instances.clear();
-
-        if let Some(visible) = camera.visible_tiles(viewport) {
-            for y in visible.min_y..=visible.max_y {
-                for x in visible.min_x..=visible.max_x {
-                    let is_even = (x + y).rem_euclid(2) == 0;
-                    #[expect(
-                        clippy::cast_precision_loss,
-                        reason = "visible tile coordinates fit within f32"
-                    )]
-                    let origin = [x as f32, y as f32];
-                    self.instances.push(QuadInstance {
-                        origin,
-                        size: [1.0, 1.0],
-                        color: if is_even { GRASS_LIGHT } else { GRASS_DARK },
-                    });
-                }
-            }
-        }
-
-        // Before interpolated motion lands in the next slice, draw each entity
-        // at the tile its current motion started from (`motion.from`).
-        for entity in &snapshot.entities {
-            let tile = entity.motion.from;
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "tile coordinates fit within f32"
-            )]
-            let (tx, ty) = (tile.x as f32, tile.y as f32);
-            self.instances.push(QuadInstance {
-                origin: [tx + 0.12, ty + 0.16],
-                size: [0.76, 0.76],
-                color: ENTITY_SHADOW,
-            });
-            self.instances.push(QuadInstance {
-                origin: [tx + 0.15, ty + 0.10],
-                size: [0.70, 0.70],
-                color: ENTITY_BODY,
-            });
-        }
     }
 
     fn ensure_instance_capacity(&mut self, needed: usize) {
@@ -397,7 +338,7 @@ fn create_quad_pipeline(
             module: &shader,
             entry_point: Some("vs_main"),
             compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &[Some(QuadInstance::layout())],
+            buffers: &[Some(quad_instance_layout())],
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,

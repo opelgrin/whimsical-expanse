@@ -4,6 +4,7 @@
 
 pub mod camera;
 pub mod renderer;
+mod scene;
 
 pub use camera::{Camera, CameraConfig, InvalidCameraConfig, ScreenPoint, Viewport, WorldPoint};
 pub use renderer::{RenderError, Renderer};

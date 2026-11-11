@@ -21,6 +21,9 @@ exclude_re = [
     # `^ 1` give the same increment.
     'replace \| with \^ in Rng::seeded',
 
+    # The placeholder checkerboard colours are checked by eye, not by pixel tests.
+    '^crates/render/src/scene\.rs:.*checkerboard_color',
+
     # Error and usage messages: wording, not behaviour.
     'impl fmt::Display for',
     'report_usage_error',
