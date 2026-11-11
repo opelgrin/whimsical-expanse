@@ -188,14 +188,16 @@ mod tests {
     use super::*;
 
     fn test_camera() -> Camera {
-        Camera::new(CameraConfig {
-            initial_centre: WorldPoint::new(20.0, 20.0),
-            initial_pixels_per_tile: 50.0,
-            min_pixels_per_tile: 10.0,
-            max_pixels_per_tile: 200.0,
-            world_width: 100,
-            world_height: 100,
-        })
+        Camera::new(
+            CameraConfig {
+                initial_centre: WorldPoint::new(20.0, 20.0),
+                initial_pixels_per_tile: 50.0,
+                min_pixels_per_tile: 10.0,
+                max_pixels_per_tile: 200.0,
+            },
+            100,
+            100,
+        )
         .expect("valid camera")
     }
 

@@ -74,7 +74,7 @@ pub struct VisibleTileRange {
     pub max_y: i32,
 }
 
-/// Bounds and initial state of a [`Camera`].
+/// Initial state and zoom limits of a [`Camera`].
 ///
 /// Callers state every parameter explicitly so that tests never depend on
 /// game tuning.
@@ -88,15 +88,9 @@ pub struct CameraConfig {
     pub min_pixels_per_tile: f32,
     /// Largest allowed scale (most zoomed in), in logical pixels per tile.
     pub max_pixels_per_tile: f32,
-    /// Width of the world in tiles, used to clamp the camera centre to
-    /// `0.0..=world_width`.
-    pub world_width: i32,
-    /// Height of the world in tiles, used to clamp the camera centre to
-    /// `0.0..=world_height`.
-    pub world_height: i32,
 }
 
-/// Why a [`CameraConfig`] was rejected.
+/// Why camera creation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidCameraConfig {
     /// World dimensions are zero or negative.
@@ -145,15 +139,19 @@ pub struct Camera {
 }
 
 impl Camera {
-    /// Creates a camera from `config`, clamping the initial centre and zoom to
-    /// the configured bounds.
+    /// Creates a camera from `config` and the world dimensions in tiles.
+    /// Clamps the initial centre to the world and the zoom to its limits.
     ///
     /// # Errors
     ///
     /// Returns [`InvalidCameraConfig`] if the world is empty, zoom bounds are
     /// non-positive or inverted, or initial values are non-finite.
-    pub fn new(config: CameraConfig) -> Result<Self, InvalidCameraConfig> {
-        if config.world_width < 1 || config.world_height < 1 {
+    pub fn new(
+        config: CameraConfig,
+        world_width: i32,
+        world_height: i32,
+    ) -> Result<Self, InvalidCameraConfig> {
+        if world_width < 1 || world_height < 1 {
             return Err(InvalidCameraConfig::EmptyWorld);
         }
         if !config.min_pixels_per_tile.is_finite()
@@ -175,8 +173,8 @@ impl Camera {
                 .clamp(config.min_pixels_per_tile, config.max_pixels_per_tile),
             min_pixels_per_tile: config.min_pixels_per_tile,
             max_pixels_per_tile: config.max_pixels_per_tile,
-            world_width: config.world_width,
-            world_height: config.world_height,
+            world_width,
+            world_height,
         };
         camera.clamp_centre();
         Ok(camera)
@@ -324,14 +322,16 @@ mod tests {
     use super::*;
 
     fn test_camera() -> Camera {
-        Camera::new(CameraConfig {
-            initial_centre: WorldPoint::new(10.0, 8.0),
-            initial_pixels_per_tile: 40.0,
-            min_pixels_per_tile: 10.0,
-            max_pixels_per_tile: 160.0,
-            world_width: 30,
-            world_height: 20,
-        })
+        Camera::new(
+            CameraConfig {
+                initial_centre: WorldPoint::new(10.0, 8.0),
+                initial_pixels_per_tile: 40.0,
+                min_pixels_per_tile: 10.0,
+                max_pixels_per_tile: 160.0,
+            },
+            30,
+            20,
+        )
         .expect("valid camera config")
     }
 
@@ -436,14 +436,16 @@ mod tests {
     /// empty viewport.
     #[test]
     fn visible_tiles_include_partial_edge_tiles_and_clamp_to_the_grid() {
-        let camera = Camera::new(CameraConfig {
-            initial_centre: WorldPoint::new(5.0, 4.0),
-            initial_pixels_per_tile: 40.0,
-            min_pixels_per_tile: 10.0,
-            max_pixels_per_tile: 160.0,
-            world_width: 6,
-            world_height: 5,
-        })
+        let camera = Camera::new(
+            CameraConfig {
+                initial_centre: WorldPoint::new(5.0, 4.0),
+                initial_pixels_per_tile: 40.0,
+                min_pixels_per_tile: 10.0,
+                max_pixels_per_tile: 160.0,
+            },
+            6,
+            5,
+        )
         .expect("valid camera config");
 
         // Viewport 240x160 at 40 px/tile spans exactly 6.0 x 4.0 tiles around (5.0, 4.0):
@@ -475,14 +477,16 @@ mod tests {
         // Exact boundary inside the grid: camera at (3.0, 2.0) on a 10x10 world,
         // viewport 160x80 at 40 px/tile spans 4.0 x 2.0 tiles -> x in [1.0, 5.0], y in [1.0, 3.0].
         // Tile 5 covers [5.0, 6.0] (outside), so visible tiles are 1..=4 and 1..=2.
-        let inner = Camera::new(CameraConfig {
-            initial_centre: WorldPoint::new(3.0, 2.0),
-            initial_pixels_per_tile: 40.0,
-            min_pixels_per_tile: 10.0,
-            max_pixels_per_tile: 160.0,
-            world_width: 10,
-            world_height: 10,
-        })
+        let inner = Camera::new(
+            CameraConfig {
+                initial_centre: WorldPoint::new(3.0, 2.0),
+                initial_pixels_per_tile: 40.0,
+                min_pixels_per_tile: 10.0,
+                max_pixels_per_tile: 160.0,
+            },
+            10,
+            10,
+        )
         .expect("valid camera config");
         assert_eq!(
             inner.visible_tiles(Viewport::new(160.0, 80.0)),
@@ -502,14 +506,16 @@ mod tests {
     /// errors, or division by zero on minimized windows.
     #[test]
     fn gpu_uniform_maps_world_points_to_clip_space_and_snaps_to_physical_pixels() {
-        let camera = Camera::new(CameraConfig {
-            initial_centre: WorldPoint::new(10.03, 8.0),
-            initial_pixels_per_tile: 10.0,
-            min_pixels_per_tile: 5.0,
-            max_pixels_per_tile: 160.0,
-            world_width: 30,
-            world_height: 20,
-        })
+        let camera = Camera::new(
+            CameraConfig {
+                initial_centre: WorldPoint::new(10.03, 8.0),
+                initial_pixels_per_tile: 10.0,
+                min_pixels_per_tile: 5.0,
+                max_pixels_per_tile: 160.0,
+            },
+            30,
+            20,
+        )
         .expect("valid camera config");
         let viewport = Viewport::new(800.0, 400.0);
 
@@ -544,29 +550,32 @@ mod tests {
             initial_pixels_per_tile: 32.0,
             min_pixels_per_tile: 8.0,
             max_pixels_per_tile: 64.0,
-            world_width: 10,
-            world_height: 10,
         };
         assert_eq!(
-            Camera::new(CameraConfig {
-                world_width: 0,
-                ..valid
-            }),
+            Camera::new(valid, 0, 10),
             Err(InvalidCameraConfig::EmptyWorld)
         );
         assert_eq!(
-            Camera::new(CameraConfig {
-                min_pixels_per_tile: 0.0,
-                ..valid
-            }),
+            Camera::new(
+                CameraConfig {
+                    min_pixels_per_tile: 0.0,
+                    ..valid
+                },
+                10,
+                10,
+            ),
             Err(InvalidCameraConfig::InvalidZoomBounds)
         );
         assert_eq!(
-            Camera::new(CameraConfig {
-                min_pixels_per_tile: 64.0,
-                max_pixels_per_tile: 32.0,
-                ..valid
-            }),
+            Camera::new(
+                CameraConfig {
+                    min_pixels_per_tile: 64.0,
+                    max_pixels_per_tile: 32.0,
+                    ..valid
+                },
+                10,
+                10,
+            ),
             Err(InvalidCameraConfig::InvalidZoomBounds)
         );
     }

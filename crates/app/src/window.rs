@@ -73,14 +73,15 @@ impl Error for AppError {
 }
 
 /// Opens the game window, spawns the simulation thread for `world`, and runs
-/// until the window is closed.
+/// until the window is closed. The camera uses the dimensions of `world` for
+/// its bounds and the displayed grid.
 ///
 /// # Errors
 ///
 /// Returns [`AppError`] if the camera configuration is invalid, the window or
 /// event loop cannot be created, or GPU initialization/presentation fails.
 pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppError> {
-    let camera = Camera::new(config.camera).map_err(AppError::InvalidCamera)?;
+    let camera = camera_for_world(&world, config.camera)?;
     let event_loop = EventLoop::new().map_err(AppError::EventLoop)?;
 
     let simulation = SimulationHandle::spawn(world, pacer, config.initial_speed);
@@ -110,6 +111,11 @@ pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppE
         return Err(err);
     }
     Ok(())
+}
+
+fn camera_for_world(world: &World, config: CameraConfig) -> Result<Camera, AppError> {
+    let (width, height) = world.dimensions();
+    Camera::new(config, width, height).map_err(AppError::InvalidCamera)
 }
 
 struct Graphics {
@@ -349,4 +355,48 @@ impl ApplicationHandler for App {
 )]
 fn now() -> Instant {
     Instant::now()
+}
+
+#[cfg(test)]
+mod tests {
+    use expanse_render::WorldPoint;
+    use expanse_render::camera::VisibleTileRange;
+    use expanse_sim::WorldConfig;
+
+    use super::*;
+
+    /// Catches camera bounds that differ from the simulation grid, including
+    /// swapped dimensions. The camera also determines the grid drawn on screen.
+    #[test]
+    fn camera_uses_the_world_grid_for_panning_and_visible_tiles() {
+        let world = World::new(WorldConfig {
+            seed: 1,
+            width: 7,
+            height: 3,
+            ticks_per_step: 2,
+        })
+        .expect("valid world");
+        let mut camera = camera_for_world(
+            &world,
+            CameraConfig {
+                initial_centre: WorldPoint::new(1.0, 1.0),
+                initial_pixels_per_tile: 10.0,
+                min_pixels_per_tile: 5.0,
+                max_pixels_per_tile: 20.0,
+            },
+        )
+        .expect("valid camera");
+
+        camera.pan_by_screen_offset(1000.0, 1000.0);
+        assert_eq!(camera.centre(), WorldPoint::new(7.0, 3.0));
+        assert_eq!(
+            camera.visible_tiles(Viewport::new(1000.0, 1000.0)),
+            Some(VisibleTileRange {
+                min_x: 0,
+                max_x: 6,
+                min_y: 0,
+                max_y: 2,
+            })
+        );
+    }
 }

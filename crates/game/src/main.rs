@@ -67,8 +67,6 @@ fn main() -> ExitCode {
             initial_pixels_per_tile: INITIAL_PIXELS_PER_TILE,
             min_pixels_per_tile: MIN_PIXELS_PER_TILE,
             max_pixels_per_tile: MAX_PIXELS_PER_TILE,
-            world_width: GRID_WIDTH,
-            world_height: GRID_HEIGHT,
         },
         controls: CameraControlsConfig {
             pan_speed_pixels_per_second: PAN_SPEED_PIXELS_PER_SECOND,
