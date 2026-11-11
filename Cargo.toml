@@ -9,6 +9,12 @@ license = "MIT"
 repository = "https://github.com/opelgrin/whimsical-expanse"
 publish = false
 
+[workspace.dependencies]
+bytemuck = { version = "1.25", features = ["derive"] }
+pollster = "1.0"
+wgpu = { version = "30.0", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }
+winit = "0.30"
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 unused_qualifications = "warn"

@@ -12,6 +12,10 @@ default:
 build:
     cargo build --workspace
 
+# Run the game window, e.g. `just game --seed 1`
+game *args:
+    cargo run --release --locked -p expanse-game -- {{args}}
+
 # Run the headless simulation, e.g. `just headless --seed 1 --ticks 100000`
 headless *args:
     cargo run --release --locked -q -p expanse-headless -- {{args}}
