@@ -32,7 +32,7 @@ and drive values alone.
 An item kind (content) has:
 
 - **tags**, a vocabulary shared by items, bodies and drives;
-- a weight, a base value and a stack size;
+- a weight, a base value and a stack limit;
 - **uses**, typically one to three: consume, equip, plant, read, give…
 - for each use, a duration and **effects**, typically one to four.
 
@@ -64,19 +64,49 @@ sweet", "hates fish"). They can carry whims ("fancies something sweet today").
 
 ### Representation
 
-- Ordinary items are **values** in an inventory: a kind, a quantity and a small
-  amount of state that splits stacks. **Quality** is included.
-  **Spoilage** is deferred.
-- Only unique or stateful items (a named sword, a letter) are entities.
+An **item kind** (above) is content: immutable and shared. In the world, **items
+are entities**.
+
+- **One identity model.** Every item, or stack of identical fungible items, is
+  an entity with its own generational ID. Actors, world objects and items share
+  the same storage, reference and lifecycle rules.
+- **Stacks.** Identical items of a stackable kind share one entity with a
+  quantity. Taking part of a stack splits off a new entity; combining identical
+  stacks merges them and retires one ID. An item with a stack limit of one, or
+  with distinct per-item state, has a quantity of one and never merges.
+- **Where an item is.** An item lying in the world has a position. An item in a
+  container or carried by an actor is held by that entity and has no position of
+  its own. No wrapper entity is needed for a single item on the ground.
+- **Per-item state.** Quality is expected; spoilage and durability are deferred.
+  Uncommon per-item capabilities (a name, an owner, an inscription, durability)
+  live in typed stores keyed by the item's entity ID, like any other entity
+  capability.
+
+Why entities with stack counts rather than pure value structs in inventories:
+
+- ground items, equipment, containers and world objects all use the same entity
+  IDs, stores, stale-reference handling and commit conflict resolution;
+- any belief, goal or mechanic that refers to one specific item ("recover my
+  sword", "pick up that apple") uses an ordinary entity ID instead of a second
+  identity system;
+- stack counts on identical goods keep farms, stockpiles and coins from creating
+  an entity per unit.
 
 ### Items and decisions
 
-- **Goals concern effects, not items.** A drive proposes "be nourished", not
-  "eat bread". Methods are indexed by effect, with the actor's body rules
-  applied. The planner never scans the item catalogue.
-- **Tools have no value of their own.** A tool is a precondition of a method and
-  gets its value through the goal chain. Nobody acquires things in advance
-  unless a drive asks for it ("keep a food reserve", "be well equipped").
+- **Needs ask for effects, not specific items.** Hunger proposes "be nourished",
+  not "eat bread"; a gift proposes social value for the recipient. Items supply
+  methods through the effects they advertise, with the actor's body rules and
+  preferences applied, so new items work without changing drives or scanning the
+  item catalogue.
+- **Goals and subgoals can still ask for items.** Even though every item in the
+  simulation is an entity, actors usually plan and remember goods by effect, tag
+  or kind ("needs a bottle", "keep a food reserve", "deliver grain"), and bind
+  to a specific item's entity ID only when targeting a concrete stack to act on
+  or when that individual item matters ("recover my sword").
+- **Tools have no value of their own.** Unless a drive values having an item
+  directly ("keep a food reserve", "own a sword"), an item gets its value only
+  through the goal chain that needs it.
 - **The mind values believed effects; the simulation applies true effects.**
 
 ## Knowledge

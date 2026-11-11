@@ -36,8 +36,9 @@ presentation. It holds no references into the world.
 **State hash**: a hash of the complete simulation state, used to check that
 runs are reproducible. Stable for one binary only.
 
-**Entity**: anything with an identity in the world, such as an actor, an object
-or a unique item. Identified by a generational ID.
+**Entity**: anything with an identity in the world: an actor, an object or an
+item (or a stack of identical items; see
+[items](../docs/SIMULATION.md#representation)). Identified by a generational ID.
 
 **Store**: the typed storage of one capability (position, inventory…) for the
 entities that have it.

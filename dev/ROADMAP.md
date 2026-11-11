@@ -75,8 +75,8 @@ memories. You can send your character somewhere.
 ## M3: Deciding
 
 - Drives, selection and backward-chained methods.
-- Objects and items that advertise. Items as values, with effects and body rules.
-  Meters.
+- Inventories, and objects and items that advertise, with effects and body
+  rules. Meters.
 - Goal chain inspector.
 - Content: a grazing animal, a villager, and an actor with no physiological
   drives.

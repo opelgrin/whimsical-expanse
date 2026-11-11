@@ -98,15 +98,12 @@ catch up indefinitely.
 **Presentation** never reads the world directly. After each tick, the
 simulation publishes a **snapshot**: an owned projection of what is visible. A
 newer snapshot replaces one not yet drawn. Rendering interpolates motion between
-two ticks and never extrapolates. Events (for notifications and the chronicle)
-travel through a separate *ordered* channel, because snapshots can be skipped.
+two ticks and never extrapolates. Events (e.g. for notifications)
+travel through a separate _ordered_ channel, because snapshots can be skipped.
 
-The simulation thread reaches other threads only through two slots, each
-behind a short lock that is never held during a tick or a draw. Controls
-(speed, single steps, shutdown) are latest-value-wins, so no backlog of
-commands can build up. The latest snapshot replaces any snapshot not yet taken.
-The tick pacer is pure: it receives elapsed time and returns the number of due
-ticks, so it is tested without a clock.
+The simulation thread owns the world and shares no mutable state with other
+threads. Commands and snapshots cross thread boundaries only through
+latest-value-wins handoffs. No backlogs or queues are held.
 
 **Player commands** are applied between ticks and recorded with their tick, so a
 run can be replayed.
@@ -138,8 +135,9 @@ time, since mechanics are typed code. An ECS's generic machinery (dynamic types,
 queries, schedulers) brings no benefit to that case. Moving to an ECS crate later
 would be a mechanical change.
 
-Ordinary items are values inside inventories, not entities (see
-[items](../docs/SIMULATION.md#items)).
+Items (and stacks of identical items) are entities too, so ground items, carried
+items and per-item capabilities use the same entity IDs and typed stores as
+actors and objects (see [items](../docs/SIMULATION.md#representation)).
 
 ## World
 
