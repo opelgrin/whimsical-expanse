@@ -35,7 +35,7 @@ or the game's design (see [docs/](../docs/)).
 One thin cut through every layer.
 
 - [x] Cargo workspace and crate skeletons.
-- [ ] Window (winit + wgpu), camera with panning and zoom.
+- [x] Window (winit + wgpu), camera with panning and zoom.
 - [x] Simulation thread, tick loop and snapshots.
 - [ ] Interpolated motion.
 - [x] One entity moving across a flat grid.

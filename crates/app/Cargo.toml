@@ -1,6 +1,6 @@
 [package]
 name = "expanse-app"
-description = "Running the simulation in real time: tick pacing and the simulation thread."
+description = "Running the simulation in real time: tick pacing, simulation thread, window and input."
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,9 @@ publish.workspace = true
 
 [dependencies]
 expanse-core = { path = "../core" }
+expanse-render = { path = "../render" }
 expanse-sim = { path = "../sim" }
+winit.workspace = true
 
 [lints]
 workspace = true

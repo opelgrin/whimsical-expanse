@@ -45,6 +45,7 @@ crates/
   content/   loading and validating content definitions
   render/    wgpu: terrain, sprites, overlays
   app/       tick pacing, simulation thread, window, input, UI
+  game/      binary: opens the game window with default configuration
   headless/  binary: runs the simulation without a window
 tools/
   cook/      asset cooking: licensed pack and placeholders

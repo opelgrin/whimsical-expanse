@@ -96,6 +96,12 @@ impl World {
         })
     }
 
+    /// The grid width and height in tiles.
+    #[must_use]
+    pub const fn dimensions(&self) -> (i32, i32) {
+        (self.config.width, self.config.height)
+    }
+
     /// The current tick.
     #[must_use]
     pub const fn tick(&self) -> Tick {
