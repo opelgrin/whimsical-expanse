@@ -14,7 +14,8 @@ pub(crate) struct QuadInstance {
     color: [f32; 4],
 }
 
-// Placeholder M0 palette in linear RGBA (for sRGB render targets).
+// Placeholder M0 palette in linear RGBA. Assumes an sRGB surface, which
+// `build_surface_config` prefers.
 const GRASS_LIGHT: [f32; 4] = [0.165, 0.345, 0.145, 1.0];
 const GRASS_DARK: [f32; 4] = [0.135, 0.295, 0.120, 1.0];
 const ENTITY_SHADOW: [f32; 4] = [0.040, 0.075, 0.035, 1.0];

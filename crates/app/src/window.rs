@@ -73,7 +73,7 @@ impl Error for AppError {
 }
 
 /// Opens the game window, spawns the simulation thread for `world`, and runs
-/// until the window is closed. The camera uses the dimensions of `world` for
+/// until the window is closed or a fatal error stops it. The camera uses the dimensions of `world` for
 /// its bounds and the displayed grid.
 ///
 /// # Errors

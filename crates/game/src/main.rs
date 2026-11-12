@@ -20,7 +20,8 @@ const TICKS_PER_STEP: u64 = 10;
 const BASE_TICKS_PER_SECOND: u32 = 20;
 const MAX_SIMULATION_LAG: Duration = Duration::from_millis(250);
 
-// Window and camera defaults (aligned with a 16x16 base tile grid).
+// Window and camera defaults. The pixels-per-tile values are multiples of 16 px,
+// the assumed base tile size; no document fixes that size yet.
 const WINDOW_TITLE: &str = "Whimsical Expanse";
 const WINDOW_WIDTH: f64 = 1280.0;
 const WINDOW_HEIGHT: f64 = 720.0;

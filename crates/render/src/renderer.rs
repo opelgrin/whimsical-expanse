@@ -61,7 +61,8 @@ fn quad_instance_layout() -> wgpu::VertexBufferLayout<'static> {
 
 const INITIAL_INSTANCE_CAPACITY: usize = 1024;
 
-// Placeholder M0 palette in linear RGBA (for sRGB render targets).
+// Placeholder M0 palette in linear RGBA. Assumes an sRGB surface, which
+// `build_surface_config` prefers.
 const BACKGROUND_CLEAR: wgpu::Color = wgpu::Color {
     r: 0.025,
     g: 0.032,
@@ -88,8 +89,9 @@ impl<'window> Renderer<'window> {
     ///
     /// # Errors
     ///
-    /// Returns [`RenderError`] if no compatible GPU adapter or surface can be
-    /// initialized.
+    /// Returns [`RenderError`] if the surface cannot be created, no compatible
+    /// GPU adapter or device can be opened, or the surface has no usable
+    /// texture format.
     pub fn new(
         display: impl wgpu::rwh::HasDisplayHandle + fmt::Debug + Send + Sync + 'static,
         target: impl Into<wgpu::SurfaceTarget<'window>>,
@@ -150,13 +152,14 @@ impl<'window> Renderer<'window> {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    /// Draws the visible portion of `grid` and the entities in `snapshot`.
+    /// Draws the tiles of the world visible through `camera` and `viewport`,
+    /// then the entities in `snapshot`. Does nothing for an empty viewport.
     ///
     /// # Errors
     ///
-    /// Returns [`RenderError::Surface`] only on unrecoverable surface errors
-    /// (such as out-of-memory). Transient swapchain losses or timeouts are
-    /// handled internally and skipped cleanly.
+    /// Returns [`RenderError::SurfaceValidation`] if acquiring a frame reports
+    /// a validation error. Lost or outdated surfaces are reconfigured, and
+    /// timeouts and occluded windows skip the frame; none of these is an error.
     pub fn render(
         &mut self,
         camera: &Camera,

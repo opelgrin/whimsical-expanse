@@ -8,7 +8,7 @@ Rewrite it, never append. The pull request that finishes a work item updates it.
 - **Milestone:** [M0: Foundation slice](ROADMAP.md#m0-foundation-slice)
 - **Last:** the window (`winit` + `wgpu`), instanced quad renderer, and camera
   with panning and zoom.
-- **Next:** interpolated motion, then the `egui` debug overlay. Together they
-  complete the M0 exit criterion: the game shows an entity moving smoothly on a
-  grid.
+- **Next:** interpolated motion, then the `egui` debug overlay (both M0 items,
+  see the [roadmap](ROADMAP.md#m0-foundation-slice)). The M0 exit criterion is
+  that the game shows an entity moving on a grid.
 - **Open:** nothing blocking.

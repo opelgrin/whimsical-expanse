@@ -17,10 +17,11 @@ use expanse_render::{Camera, ScreenPoint, Viewport};
 pub struct CameraControlsConfig {
     /// Keyboard panning speed in logical screen pixels per second.
     pub pan_speed_pixels_per_second: f32,
-    /// Scale multiplier per discrete scroll notch (`> 1.0`, e.g. `1.15`).
+    /// Scale multiplier per discrete scroll notch, e.g. `1.15`. Above `1.0`
+    /// zooms in and below it zooms out. Zero or negative disables zoom.
     pub zoom_step_factor: f32,
     /// Logical scroll pixels treated as one discrete scroll notch for smooth
-    /// trackpads.
+    /// trackpads. Zero or negative ignores pixel scrolling.
     pub pixels_per_scroll_line: f32,
 }
 
@@ -43,8 +44,7 @@ pub enum ScrollAmount {
 }
 
 /// Distinguishes the two physical keys bound to each pan direction (for example
-/// `KeyW` and `ArrowUp`) so releasing one while the other is still held keeps
-/// panning smoothly, and duplicate key-repeat presses stay idempotent.
+/// `KeyW` and `ArrowUp`), so that each binding is tracked on its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanBinding {
     Primary(PanKey),
@@ -167,6 +167,8 @@ impl CameraController {
         camera.pan_by_screen_offset(x_axis / length * distance, y_axis / length * distance);
     }
 
+    /// A direction is held while either of its bindings is. Releasing one
+    /// binding while the other stays down keeps panning.
     const fn is_direction_held(&self, dir: PanKey) -> bool {
         self.held_pan_keys[PanBinding::Primary(dir).slot()]
             || self.held_pan_keys[PanBinding::Secondary(dir).slot()]

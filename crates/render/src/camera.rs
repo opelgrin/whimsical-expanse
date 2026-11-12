@@ -95,7 +95,8 @@ pub struct CameraConfig {
 pub enum InvalidCameraConfig {
     /// World dimensions are zero or negative.
     EmptyWorld,
-    /// Zoom bounds are not positive, finite, or ordered `min <= max`.
+    /// Zoom bounds are not finite and positive with `min <= max`, or the
+    /// initial scale is not finite.
     InvalidZoomBounds,
     /// Initial position is not finite.
     NonFiniteCentre,
@@ -144,8 +145,9 @@ impl Camera {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidCameraConfig`] if the world is empty, zoom bounds are
-    /// non-positive or inverted, or initial values are non-finite.
+    /// Returns [`InvalidCameraConfig`] if the world is empty, if the zoom bounds
+    /// are not finite and positive with `min <= max`, or if the initial scale or
+    /// centre is not finite.
     pub fn new(
         config: CameraConfig,
         world_width: i32,
@@ -248,8 +250,8 @@ impl Camera {
     }
 
     /// Computes the range of tiles inside this camera's world (`0..world_width`
-    /// by `0..world_height`) that overlap `viewport`, or `None` if no tile is
-    /// visible.
+    /// by `0..world_height`) that overlap `viewport`, or `None` if the viewport
+    /// is empty.
     #[must_use]
     pub fn visible_tiles(&self, viewport: Viewport) -> Option<VisibleTileRange> {
         if !viewport.is_non_empty() {
@@ -282,7 +284,7 @@ impl Camera {
     /// Builds the clip-space projection uniform for `viewport`.
     ///
     /// Snaps the camera translation to physical pixels (`scale_factor` physical
-    /// pixels per logical pixel) so adjacent axis-aligned tiles share exact
+    /// pixels per logical pixel, or 1 if it is smaller) so adjacent axis-aligned tiles share exact
     /// pixel edges without sub-pixel jitter when panning.
     #[must_use]
     pub fn uniform(&self, viewport: Viewport, scale_factor: f32) -> CameraUniform {
