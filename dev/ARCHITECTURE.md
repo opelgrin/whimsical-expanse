@@ -109,6 +109,23 @@ latest-value-wins handoffs. No backlogs or queues are held.
 **Player commands** are applied between ticks and recorded with their tick, so a
 run can be replayed.
 
+## Input
+
+The window is the only code that sees platform events. It passes each one to a
+single input state ([`crates/app/src/input/`](../crates/app/src/input/)), which
+uses bindings to turn keys and mouse buttons into **input actions**. Bindings are
+data, supplied by the game binary like other defaults.
+
+Once per frame, consumers read that state: what is held, what was pressed, the
+cursor, its motion and scrolling. The camera controls are one consumer. The
+frame then ends, which forgets what happened but keeps what is held. Consumers
+never see platform events, so each is tested without a window and a new control
+adds a binding instead of a branch in the window code.
+
+A UI layer will get each event before the input state, so that scrolling or
+clicking over a panel does not also move the camera. An input action that
+changes the world becomes a player command; the rest stay presentation.
+
 ## Entities and storage
 
 There is no general-purpose ECS. Entities are generational IDs. Each
