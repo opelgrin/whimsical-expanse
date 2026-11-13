@@ -6,7 +6,8 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
-use expanse_app::input::CameraControlsConfig;
+use expanse_app::camera_controls::CameraControlsConfig;
+use expanse_app::input::{Bindings, Button, InputAction, InputConfig, KeyCode, MouseButton};
 use expanse_app::pacer::{Speed, TickPacer};
 use expanse_app::window::{self, AppConfig};
 use expanse_render::{CameraConfig, WorldPoint};
@@ -69,10 +70,13 @@ fn main() -> ExitCode {
             min_pixels_per_tile: MIN_PIXELS_PER_TILE,
             max_pixels_per_tile: MAX_PIXELS_PER_TILE,
         },
-        controls: CameraControlsConfig {
+        input: InputConfig {
+            bindings: default_bindings(),
+            pixels_per_scroll_line: PIXELS_PER_SCROLL_LINE,
+        },
+        camera_controls: CameraControlsConfig {
             pan_speed_pixels_per_second: PAN_SPEED_PIXELS_PER_SECOND,
             zoom_step_factor: ZOOM_STEP_FACTOR,
-            pixels_per_scroll_line: PIXELS_PER_SCROLL_LINE,
         },
     };
 
@@ -82,6 +86,21 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Physical key positions, so `WASD` is `ZQSD` on AZERTY, plus the arrow keys.
+fn default_bindings() -> Bindings {
+    Bindings::new()
+        .with(Button::Key(KeyCode::KeyW), InputAction::PanUp)
+        .with(Button::Key(KeyCode::KeyS), InputAction::PanDown)
+        .with(Button::Key(KeyCode::KeyA), InputAction::PanLeft)
+        .with(Button::Key(KeyCode::KeyD), InputAction::PanRight)
+        .with(Button::Key(KeyCode::ArrowUp), InputAction::PanUp)
+        .with(Button::Key(KeyCode::ArrowDown), InputAction::PanDown)
+        .with(Button::Key(KeyCode::ArrowLeft), InputAction::PanLeft)
+        .with(Button::Key(KeyCode::ArrowRight), InputAction::PanRight)
+        .with(Button::Mouse(MouseButton::Middle), InputAction::DragPan)
+        .with(Button::Key(KeyCode::Escape), InputAction::TogglePause)
 }
 
 fn parse_seed(mut args: impl Iterator<Item = String>) -> Result<u64, String> {

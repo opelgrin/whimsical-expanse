@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use expanse_render::{
     Camera, CameraConfig, InvalidCameraConfig, RenderError, Renderer, ScreenPoint, Viewport,
@@ -12,12 +12,13 @@ use expanse_sim::World;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
-use crate::input::{CameraController, CameraControlsConfig, PanBinding, PanKey, ScrollAmount};
+use crate::camera_controls::{CameraControls, CameraControlsConfig};
+use crate::input::{Button, InputAction, InputConfig, InputState, ScrollAmount};
 use crate::pacer::{Speed, TickPacer};
 use crate::simulation_thread::SimulationHandle;
 
@@ -33,8 +34,10 @@ pub struct AppConfig {
     pub initial_speed: Speed,
     /// Initial camera state and limits.
     pub camera: CameraConfig,
-    /// Keyboard and mouse camera controls tuning.
-    pub controls: CameraControlsConfig,
+    /// Key and mouse bindings, and how input devices are read.
+    pub input: InputConfig,
+    /// Camera movement and zoom tuning.
+    pub camera_controls: CameraControlsConfig,
 }
 
 /// Errors that can occur while creating or running the application window.
@@ -89,7 +92,8 @@ pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppE
         title: config.title,
         initial_logical_size: LogicalSize::new(config.window_width, config.window_height),
         camera,
-        controller: CameraController::new(config.controls),
+        input: InputState::new(config.input),
+        camera_controls: CameraControls::new(config.camera_controls),
         speed: config.initial_speed,
         unpaused_speed: match config.initial_speed {
             Speed::Paused => Speed::Normal,
@@ -127,7 +131,8 @@ struct App {
     title: String,
     initial_logical_size: LogicalSize<f64>,
     camera: Camera,
-    controller: CameraController,
+    input: InputState,
+    camera_controls: CameraControls,
     speed: Speed,
     unpaused_speed: Speed,
     occluded: bool,
@@ -163,39 +168,23 @@ impl App {
         )
     }
 
-    fn handle_key(&mut self, key: PhysicalKey, state: ElementState, repeat: bool) {
-        let pressed = state == ElementState::Pressed;
-        let PhysicalKey::Code(code) = key else {
-            return;
-        };
-        match code {
-            KeyCode::KeyW => self
-                .controller
-                .set_pan_key(PanBinding::Primary(PanKey::Up), pressed),
-            KeyCode::KeyS => self
-                .controller
-                .set_pan_key(PanBinding::Primary(PanKey::Down), pressed),
-            KeyCode::KeyA => self
-                .controller
-                .set_pan_key(PanBinding::Primary(PanKey::Left), pressed),
-            KeyCode::KeyD => self
-                .controller
-                .set_pan_key(PanBinding::Primary(PanKey::Right), pressed),
-            KeyCode::ArrowUp => self
-                .controller
-                .set_pan_key(PanBinding::Secondary(PanKey::Up), pressed),
-            KeyCode::ArrowDown => self
-                .controller
-                .set_pan_key(PanBinding::Secondary(PanKey::Down), pressed),
-            KeyCode::ArrowLeft => self
-                .controller
-                .set_pan_key(PanBinding::Secondary(PanKey::Left), pressed),
-            KeyCode::ArrowRight => self
-                .controller
-                .set_pan_key(PanBinding::Secondary(PanKey::Right), pressed),
-            KeyCode::Escape if pressed && !repeat => self.toggle_pause(),
-            _ => {}
+    /// Applies one frame of input: the continuous controls first, then the
+    /// actions pressed since the last frame, in order.
+    fn apply_input(&mut self, dt: Duration, viewport: Viewport) {
+        self.camera_controls
+            .update(&self.input, dt, viewport, &mut self.camera);
+        let pressed = self.input.pressed_actions().to_vec();
+        for action in pressed {
+            match action {
+                InputAction::TogglePause => self.toggle_pause(),
+                InputAction::PanUp
+                | InputAction::PanDown
+                | InputAction::PanLeft
+                | InputAction::PanRight
+                | InputAction::DragPan => {}
+            }
         }
+        self.input.end_frame();
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
@@ -203,12 +192,15 @@ impl App {
         let dt = current.saturating_duration_since(self.last_frame);
         self.last_frame = current;
 
-        self.controller.advance(dt, &mut self.camera);
+        let Some(graphics) = &self.graphics else {
+            return;
+        };
+        let (viewport, scale_factor) = Self::current_viewport(&graphics.window);
+        self.apply_input(dt, viewport);
 
         let (Some(graphics), Some(simulation)) = (&mut self.graphics, &self.simulation) else {
             return;
         };
-        let (viewport, scale_factor) = Self::current_viewport(&graphics.window);
         if viewport.width <= 0.0 || viewport.height <= 0.0 || self.occluded {
             return;
         }
@@ -302,10 +294,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Focused(false) => {
-                self.controller.clear_inputs();
+                self.input.focus_lost();
             }
             WindowEvent::CursorLeft { .. } => {
-                self.controller.cursor_left();
+                self.input.cursor_left();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let logical = position.to_logical::<f64>(window.scale_factor());
@@ -314,17 +306,13 @@ impl ApplicationHandler for App {
                     reason = "cursor logical coordinates fit in f32"
                 )]
                 let point = ScreenPoint::new(logical.x as f32, logical.y as f32);
-                self.controller.update_cursor(point, &mut self.camera);
+                self.input.cursor_moved(point);
             }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Middle,
-                ..
-            } => {
-                self.controller.set_dragging(state == ElementState::Pressed);
+            WindowEvent::MouseInput { state, button, .. } => {
+                self.input
+                    .button_changed(Button::Mouse(button), state == ElementState::Pressed);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let (viewport, _) = Self::current_viewport(&window);
                 let scroll = match delta {
                     MouseScrollDelta::LineDelta(_, y) => ScrollAmount::Lines(y),
                     MouseScrollDelta::PixelDelta(pos) => {
@@ -336,10 +324,13 @@ impl ApplicationHandler for App {
                         ScrollAmount::Pixels(logical_y as f32)
                     }
                 };
-                self.controller.zoom(scroll, viewport, &mut self.camera);
+                self.input.scrolled(scroll);
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                self.handle_key(event.physical_key, event.state, event.repeat);
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    self.input
+                        .button_changed(Button::Key(code), event.state == ElementState::Pressed);
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.redraw(event_loop);

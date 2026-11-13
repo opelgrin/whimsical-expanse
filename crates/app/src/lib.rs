@@ -4,6 +4,7 @@
 //! real time, runs the world on its own thread, and connects window input to
 //! presentation.
 
+pub mod camera_controls;
 pub mod input;
 pub mod pacer;
 pub mod simulation_thread;
