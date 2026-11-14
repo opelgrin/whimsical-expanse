@@ -8,9 +8,6 @@ what is built right now (see [STATUS.md](STATUS.md) and the code).
 > disagrees, the code is current and this document needs fixing. As parts are
 > built, their sections are rewritten to describe what is implemented.
 
-The [invariants](INVARIANTS.md) are the rules; this document explains the
-structure that follows them.
-
 ## Technology
 
 - **Rust**, stable toolchain, as one Cargo workspace.
@@ -43,7 +40,7 @@ crates/
   sim/       world state, mechanics, perception, knowledge, events, snapshots
   ai/        drives, selection, methods, activities
   content/   loading and validating content definitions
-  render/    wgpu: terrain, sprites, overlays
+  render/    wgpu: terrain, sprites, world overlays, the UI pass
   app/       tick pacing, simulation thread, window, input, UI
   game/      binary: opens the game window with default configuration
   headless/  binary: runs the simulation without a window
@@ -139,9 +136,8 @@ The UI is built with egui. For now it is only the
 [debug overlay](CONTEXT.md#presentation)
 ([`crates/app/src/overlay.rs`](../crates/app/src/overlay.rs)). It reads
 snapshots like the rest of presentation and does not act on the simulation
-itself: it returns requests, such as a new speed, which the window applies.
-egui runs every frame, even while the overlay is hidden, so that its view of
-held buttons and the cursor stays current.
+itself: it returns requests, such as a new speed, which the window applies. egui runs every frame, even while the overlay is hidden, so that its
+view of held buttons and the cursor stays current.
 
 The renderer owns everything that touches the GPU. It draws the UI in a second
 pass over the world, from the triangles and texture changes that egui produced
@@ -198,12 +194,13 @@ whether `serde` earns its place.
 
 ## Assets
 
-- Content names visuals by **logical asset IDs**.
+- Content names visuals by **logical asset IDs**, never by files inside the pack.
 - The licensed pack lives outside the repository, located by configuration, and
   is identified by a committed provenance manifest (source, version, checksum,
   licence).
+- Every logical ID has a placeholder in the repository.
 - The `cook` tool builds a runtime container (atlases plus the mapping from IDs
-  to regions) from either the pack or the in-repository placeholders.
+  to regions) from either the pack, with our modifications, or the placeholders.
 
 ## Tooling
 

@@ -26,13 +26,13 @@ or the game's design (see [docs/](../docs/)).
 - **Representative content early.** The decision system is exercised from the
   start by an actor without physiological drives, next to those with them (see
   [the vision](../docs/VISION.md#representative-content)).
-- **Determinism is tested from M0**, and every later milestone keeps the test
+- **Determinism stays tested.** Every milestone keeps the determinism test
   passing.
-- **CI on all supported platforms from M0.**
+- **CI runs on every supported platform.**
 
 ## M0: Foundation slice
 
-One thin cut through every layer.
+**Done.** One thin cut through every layer.
 
 - [x] Cargo workspace and crate skeletons.
 - [x] Window (winit + wgpu), camera with panning and zoom.

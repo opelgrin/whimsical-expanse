@@ -82,7 +82,7 @@ That implies:
 | Motivation | Sandbox, with aspirations as a likely bridge between watching and playing. The form is an [open question](#open-questions); it can start barebones. |
 | Economy | Very simple at first (buy, sell, a few prices). May grow if interesting. Never an economic simulation. |
 | Building | Minimal at first. Less central than in The Sims. |
-| Art | Based on a purchased asset pack that may be modified and extended. It cannot be redistributed, so it never enters git. Abstract placeholder art is used when the pack is absent. |
+| Art | Based on a purchased asset pack that may be modified and extended. It cannot be redistributed, so the open-source game comes with abstract placeholder art instead. The placeholders must be readable enough to play with, not only to debug with. |
 | Platforms | Linux, Windows and macOS (Apple silicon only). |
 | Technology | Rust. Technical choices are recorded in the developer documentation. |
 
@@ -95,18 +95,6 @@ That implies:
 - Not a framework first. The simulation serves the game, not the other way round.
 - Not commercial. No storefront releases.
 - Not optimal AI. Believable beats optimal.
-
-## Art and assets
-
-The repository must build and run without the licensed pack.
-
-- Content refers to visuals by **logical asset ids**, never by files inside the pack.
-- The pack lives outside version control and is located by configuration.
-- A **cooking** step turns source assets (the pack plus any modifications) into
-  the runtime format, such as atlases.
-- A **placeholder** visual set (abstract shapes and colours) exists for every
-  logical id. Because anyone cloning the open-source repository gets this set,
-  it must be readable enough to play with, not only to debug with.
 
 ## Representative content
 
@@ -153,10 +141,8 @@ Technical slices come before it. *(Proposed; to be refined.)*
   configurable in any case.
 - **Coarse simulation:** one option is the same simulation updated less often
   far away (every N ticks, staggered so the load stays smooth). The other is a
-  separate low-fidelity path. The first is simpler and uses one code path, but
-  its cost still grows with the total population. Whichever is chosen,
-  simulation steps must tolerate a variable elapsed time from the start, so
-  that both options stay possible.
+  separate low-fidelity path. The first is simpler, but its cost still grows
+  with the total population.
 
 ## Heritage
 

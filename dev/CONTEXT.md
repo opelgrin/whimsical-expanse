@@ -24,6 +24,9 @@ not a player command, which reaches the world.
 
 ## Presentation
 
+**Snapshot**: an owned projection of the world at one tick, published for
+presentation. It holds no references into the world.
+
 **Debug overlay**: development controls and readings drawn over the world,
 hidden until toggled. Not the game's UI.
 
@@ -40,9 +43,6 @@ concept, never a rendering one.
 
 **Motion**: a move from one tile to another over a span of ticks. The
 simulation knows only whole tiles; rendering interpolates along a motion.
-
-**Snapshot**: an owned projection of the world at one tick, published for
-presentation. It holds no references into the world.
 
 **State hash**: a hash of the complete simulation state, used to check that
 runs are reproducible. Stable for one binary only.
