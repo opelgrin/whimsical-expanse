@@ -19,7 +19,8 @@ use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
 use crate::camera_controls::{CameraControls, CameraControlsConfig};
-use crate::input::{Button, InputAction, InputConfig, InputState, ScrollAmount};
+use crate::input::{Button, InputAction, InputConfig, InputEvent, InputState, ScrollAmount};
+use crate::overlay::{DebugOverlay, OverlayRequest, OverlayStatus};
 use crate::pacer::{Speed, TickPacer};
 use crate::simulation_thread::SimulationHandle;
 
@@ -95,11 +96,7 @@ pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppE
         camera,
         input: InputState::new(config.input),
         camera_controls: CameraControls::new(config.camera_controls),
-        speed: config.initial_speed,
-        unpaused_speed: match config.initial_speed {
-            Speed::Paused => Speed::Normal,
-            active => active,
-        },
+        speed: SpeedSelection::new(config.initial_speed),
         occluded: false,
         simulation: Some(simulation),
         graphics: None,
@@ -126,6 +123,45 @@ fn camera_for_world(world: &World, config: CameraConfig) -> Result<Camera, AppEr
 struct Graphics {
     window: Arc<Window>,
     renderer: Renderer<'static>,
+    overlay: DebugOverlay,
+}
+
+/// The selected simulation speed, and the speed that ending a pause resumes.
+///
+/// Pausing is open to the player and the debug overlay alike, so whichever
+/// paused, the pause key resumes the speed that was running before.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpeedSelection {
+    current: Speed,
+    resume: Speed,
+}
+
+impl SpeedSelection {
+    const fn new(initial: Speed) -> Self {
+        Self {
+            current: initial,
+            resume: match initial {
+                Speed::Paused => Speed::Normal,
+                active => active,
+            },
+        }
+    }
+
+    fn select(&mut self, speed: Speed) {
+        if speed == Speed::Paused && self.current != Speed::Paused {
+            self.resume = self.current;
+        }
+        self.current = speed;
+    }
+
+    fn toggle_pause(&mut self) {
+        let next = if self.current == Speed::Paused {
+            self.resume
+        } else {
+            Speed::Paused
+        };
+        self.select(next);
+    }
 }
 
 struct App {
@@ -134,8 +170,7 @@ struct App {
     camera: Camera,
     input: InputState,
     camera_controls: CameraControls,
-    speed: Speed,
-    unpaused_speed: Speed,
+    speed: SpeedSelection,
     occluded: bool,
     simulation: Option<SimulationHandle>,
     graphics: Option<Graphics>,
@@ -144,15 +179,23 @@ struct App {
 }
 
 impl App {
-    fn toggle_pause(&mut self) {
-        self.speed = if self.speed == Speed::Paused {
-            self.unpaused_speed
-        } else {
-            self.unpaused_speed = self.speed;
-            Speed::Paused
-        };
+    fn change_speed(&mut self, change: impl FnOnce(&mut SpeedSelection)) {
+        change(&mut self.speed);
         if let Some(simulation) = &self.simulation {
-            simulation.set_speed(self.speed);
+            simulation.set_speed(self.speed.current);
+        }
+    }
+
+    fn apply_overlay_request(&mut self, request: OverlayRequest) {
+        match request {
+            OverlayRequest::SetSpeed(speed) => {
+                self.change_speed(|selection| selection.select(speed));
+            }
+            OverlayRequest::Step => {
+                if let Some(simulation) = &self.simulation {
+                    simulation.step();
+                }
+            }
         }
     }
 
@@ -177,7 +220,12 @@ impl App {
         let pressed = self.input.pressed_actions().to_vec();
         for action in pressed {
             match action {
-                InputAction::TogglePause => self.toggle_pause(),
+                InputAction::TogglePause => self.change_speed(SpeedSelection::toggle_pause),
+                InputAction::ToggleOverlay => {
+                    if let Some(graphics) = &mut self.graphics {
+                        graphics.overlay.toggle();
+                    }
+                }
                 InputAction::PanUp
                 | InputAction::PanDown
                 | InputAction::PanLeft
@@ -206,22 +254,35 @@ impl App {
             return;
         }
         let snapshots = simulation.latest_snapshots();
+        let overlay_frame = graphics.overlay.run(
+            &graphics.window,
+            dt,
+            OverlayStatus {
+                tick: snapshots.current.tick,
+                speed: self.speed.current,
+            },
+        );
         let interpolation = Interpolation {
             previous: &snapshots.previous,
             current: &snapshots.current,
             progress: snapshots.progress(frame_time),
         };
-        if let Err(err) =
-            graphics
-                .renderer
-                .render(&self.camera, viewport, scale_factor, &interpolation)
-        {
+        if let Err(err) = graphics.renderer.render(
+            &self.camera,
+            viewport,
+            scale_factor,
+            &interpolation,
+            &overlay_frame.ui(),
+        ) {
             self.fatal_error = Some(AppError::Render(err));
             event_loop.exit();
             return;
         }
         // Chain the next vsync-paced frame while the window is visible.
         graphics.window.request_redraw();
+        for request in overlay_frame.requests {
+            self.apply_overlay_request(request);
+        }
     }
 }
 
@@ -257,7 +318,12 @@ impl ApplicationHandler for App {
         };
         self.last_frame = now();
         window.request_redraw();
-        self.graphics = Some(Graphics { window, renderer });
+        let overlay = DebugOverlay::new(&window);
+        self.graphics = Some(Graphics {
+            window,
+            renderer,
+            overlay,
+        });
     }
 
     fn window_event(
@@ -271,6 +337,18 @@ impl ApplicationHandler for App {
         };
         if window.id() != window_id {
             return;
+        }
+
+        if let Some(input_event) = input_event(&window, &event) {
+            let consumed_by_ui = self
+                .graphics
+                .as_mut()
+                .is_some_and(|graphics| graphics.overlay.on_window_event(&window, &event));
+            self.input.handle(input_event, consumed_by_ui);
+        } else if let Some(graphics) = &mut self.graphics {
+            // The overlay also follows window changes, such as resizing and
+            // focus gained, that the input state ignores.
+            let _consumed = graphics.overlay.on_window_event(&window, &event);
         }
 
         match event {
@@ -300,51 +378,55 @@ impl ApplicationHandler for App {
                     window.request_redraw();
                 }
             }
-            WindowEvent::Focused(false) => {
-                self.input.focus_lost();
-            }
-            WindowEvent::CursorLeft { .. } => {
-                self.input.cursor_left();
-            }
-            WindowEvent::CursorMoved { position, .. } => {
-                let logical = position.to_logical::<f64>(window.scale_factor());
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "cursor logical coordinates fit in f32"
-                )]
-                let point = ScreenPoint::new(logical.x as f32, logical.y as f32);
-                self.input.cursor_moved(point);
-            }
-            WindowEvent::MouseInput { state, button, .. } => {
-                self.input
-                    .button_changed(Button::Mouse(button), state == ElementState::Pressed);
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                let scroll = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => ScrollAmount::Lines(y),
-                    MouseScrollDelta::PixelDelta(pos) => {
-                        let logical_y = pos.to_logical::<f64>(window.scale_factor()).y;
-                        #[expect(
-                            clippy::cast_possible_truncation,
-                            reason = "scroll delta in logical pixels fits in f32"
-                        )]
-                        ScrollAmount::Pixels(logical_y as f32)
-                    }
-                };
-                self.input.scrolled(scroll);
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    self.input
-                        .button_changed(Button::Key(code), event.state == ElementState::Pressed);
-                }
-            }
             WindowEvent::RedrawRequested => {
                 self.redraw(event_loop);
             }
             _ => {}
         }
     }
+}
+
+/// Translates a window event into what the input state needs, or `None` if
+/// it does not concern input.
+fn input_event(window: &Window, event: &WindowEvent) -> Option<InputEvent> {
+    let input_event = match event {
+        WindowEvent::Focused(false) => InputEvent::FocusLost,
+        WindowEvent::CursorLeft { .. } => InputEvent::CursorLeft,
+        WindowEvent::CursorMoved { position, .. } => {
+            let logical = position.to_logical::<f64>(window.scale_factor());
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "cursor logical coordinates fit in f32"
+            )]
+            InputEvent::CursorMoved(ScreenPoint::new(logical.x as f32, logical.y as f32))
+        }
+        WindowEvent::MouseInput { state, button, .. } => InputEvent::Button {
+            button: Button::Mouse(*button),
+            pressed: *state == ElementState::Pressed,
+        },
+        WindowEvent::MouseWheel { delta, .. } => InputEvent::Scrolled(match delta {
+            MouseScrollDelta::LineDelta(_, y) => ScrollAmount::Lines(*y),
+            MouseScrollDelta::PixelDelta(pos) => {
+                let logical_y = pos.to_logical::<f64>(window.scale_factor()).y;
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "scroll delta in logical pixels fits in f32"
+                )]
+                ScrollAmount::Pixels(logical_y as f32)
+            }
+        }),
+        WindowEvent::KeyboardInput { event, .. } => {
+            let PhysicalKey::Code(code) = event.physical_key else {
+                return None;
+            };
+            InputEvent::Button {
+                button: Button::Key(code),
+                pressed: event.state == ElementState::Pressed,
+            }
+        }
+        _ => return None,
+    };
+    Some(input_event)
 }
 
 #[expect(
@@ -362,6 +444,27 @@ mod tests {
     use expanse_sim::WorldConfig;
 
     use super::*;
+
+    /// Catches the pause key resuming a stale speed after the overlay changed
+    /// it, or resuming into a pause, which would leave the game stuck paused.
+    #[test]
+    fn resuming_restores_the_speed_last_running_whoever_paused() {
+        let mut speed = SpeedSelection::new(Speed::Paused);
+        speed.toggle_pause();
+        assert_eq!(speed.current, Speed::Normal);
+
+        speed.select(Speed::Fast);
+        speed.select(Speed::Paused);
+        speed.toggle_pause();
+        assert_eq!(speed.current, Speed::Fast);
+
+        speed.toggle_pause();
+        speed.select(Speed::Faster);
+        speed.select(Speed::Paused);
+        speed.select(Speed::Paused);
+        speed.toggle_pause();
+        assert_eq!(speed.current, Speed::Faster);
+    }
 
     /// Catches camera bounds that differ from the simulation grid, including
     /// swapped dimensions. The camera also determines the grid drawn on screen.

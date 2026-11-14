@@ -5,9 +5,11 @@ Where the work stands, for someone starting a session. Not the plan (see the
 Rewrite it, never append. The pull request that finishes a work item updates it.
 
 - **Updated:** 2026-11-14
-- **Milestone:** [M0: Foundation slice](ROADMAP.md#m0-foundation-slice)
-- **Last:** interpolated motion. Rendering draws one tick behind, between the
-  snapshots of the simulation's last two ticks, which it publishes together.
-- **Next:** the `egui` debug overlay, the last M0 item (see the
-  [roadmap](ROADMAP.md#m0-foundation-slice)).
+- **Milestone:** [M1: A world to explore](ROADMAP.md#m1-a-world-to-explore), not
+  started. M0 is done.
+- **Last:** closed M0. The game shows an entity moving on a grid, with a debug
+  overlay on F3. Headless runs give the same hash every time on Linux, Windows
+  and macOS.
+- **Next:** refine the items of M1, in a spec if it is large enough (see
+  [how this roadmap works](ROADMAP.md#how-this-roadmap-works)).
 - **Open:** nothing blocking.

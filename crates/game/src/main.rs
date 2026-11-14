@@ -101,6 +101,7 @@ fn default_bindings() -> Bindings {
         .with(Button::Key(KeyCode::ArrowRight), InputAction::PanRight)
         .with(Button::Mouse(MouseButton::Middle), InputAction::DragPan)
         .with(Button::Key(KeyCode::Escape), InputAction::TogglePause)
+        .with(Button::Key(KeyCode::F3), InputAction::ToggleOverlay)
 }
 
 fn parse_seed(mut args: impl Iterator<Item = String>) -> Result<u64, String> {

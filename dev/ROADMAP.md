@@ -26,13 +26,13 @@ or the game's design (see [docs/](../docs/)).
 - **Representative content early.** The decision system is exercised from the
   start by an actor without physiological drives, next to those with them (see
   [the vision](../docs/VISION.md#representative-content)).
-- **Determinism is tested from M0**, and every later milestone keeps the test
+- **Determinism stays tested.** Every milestone keeps the determinism test
   passing.
-- **CI on all supported platforms from M0.**
+- **CI runs on every supported platform.**
 
 ## M0: Foundation slice
 
-One thin cut through every layer.
+**Done.** One thin cut through every layer.
 
 - [x] Cargo workspace and crate skeletons.
 - [x] Window (winit + wgpu), camera with panning and zoom.
@@ -41,9 +41,10 @@ One thin cut through every layer.
 - [x] One entity moving across a flat grid.
 - [x] Headless runner, and a determinism test: the same seed gives the same world
   state hash after N ticks.
-- [ ] egui debug overlay, hidden at start and toggled with F3. The simulation
-  speed controls live only there: the game is played at 1× for now, and
-  changing speed is a development action.
+- [x] egui debug overlay, hidden at start and toggled with F3. The simulation
+  speed controls other than pausing live only there: the game is played at 1×
+  for now, and changing speed is a development action. Pausing is also a
+  player action, on its own key.
 - [x] CI on Linux, Windows and macOS.
 
 **Exit:** the game shows an entity moving on a grid. Headless runs give the same

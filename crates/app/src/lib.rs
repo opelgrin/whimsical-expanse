@@ -2,10 +2,11 @@
 //!
 //! The simulation itself never reads the wall clock. This crate paces ticks in
 //! real time, runs the world on its own thread, and connects window input to
-//! presentation.
+//! presentation and the debug overlay.
 
 pub mod camera_controls;
 pub mod input;
+pub mod overlay;
 pub mod pacer;
 pub mod simulation_thread;
 pub mod window;
