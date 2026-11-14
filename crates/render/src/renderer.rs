@@ -69,7 +69,22 @@ const BACKGROUND_CLEAR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
-/// Owns the `wgpu` surface, device, and instanced 2D quad pipeline.
+/// What the UI drew this frame, to paint over the world.
+///
+/// The fields are `egui`'s output for one frame. Texture changes must be passed
+/// on every frame, even when nothing is drawn, because `egui` sends each one
+/// only once.
+pub struct UiFrame<'a> {
+    /// The UI's shapes, tessellated into triangles.
+    pub primitives: &'a [egui::ClippedPrimitive],
+    /// Textures (such as the font atlas) to create, update or free.
+    pub textures_delta: &'a egui::TexturesDelta,
+    /// Physical pixels per UI point.
+    pub pixels_per_point: f32,
+}
+
+/// Owns the `wgpu` surface, device, the instanced 2D quad pipeline, and the UI
+/// renderer.
 pub struct Renderer<'window> {
     surface: wgpu::Surface<'window>,
     device: wgpu::Device,
@@ -81,6 +96,7 @@ pub struct Renderer<'window> {
     instance_buffer: wgpu::Buffer,
     instance_capacity: usize,
     instances: Vec<QuadInstance>,
+    ui_painter: egui_wgpu::Renderer,
 }
 
 impl<'window> Renderer<'window> {
@@ -124,6 +140,11 @@ impl<'window> Renderer<'window> {
         let (pipeline, camera_buffer, camera_bind_group) =
             create_quad_pipeline(&device, surface_config.format);
         let instance_buffer = create_instance_buffer(&device, INITIAL_INSTANCE_CAPACITY);
+        let ui_painter = egui_wgpu::Renderer::new(
+            &device,
+            surface_config.format,
+            egui_wgpu::RendererOptions::default(),
+        );
 
         Ok(Self {
             surface,
@@ -136,6 +157,7 @@ impl<'window> Renderer<'window> {
             instance_buffer,
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
+            ui_painter,
         })
     }
 
@@ -152,8 +174,9 @@ impl<'window> Renderer<'window> {
     }
 
     /// Draws the tiles of the world visible through `camera` and `viewport`,
-    /// then the entities where `interpolation` places them. Does nothing for an
-    /// empty viewport.
+    /// then the entities where `interpolation` places them, then `ui` on top.
+    /// Draws nothing for an empty viewport, but still applies the texture
+    /// changes of `ui`.
     ///
     /// # Errors
     ///
@@ -166,6 +189,29 @@ impl<'window> Renderer<'window> {
         viewport: Viewport,
         scale_factor: f32,
         interpolation: &Interpolation<'_>,
+        ui: &UiFrame<'_>,
+    ) -> Result<(), RenderError> {
+        for (id, deltas) in &ui.textures_delta.set {
+            for delta in deltas {
+                self.ui_painter
+                    .update_texture(&self.device, &self.queue, *id, delta);
+            }
+        }
+        let result = self.draw(camera, viewport, scale_factor, interpolation, ui);
+        // Freed only after the frame that may still use them is submitted.
+        for id in &ui.textures_delta.free {
+            self.ui_painter.free_texture(id);
+        }
+        result
+    }
+
+    fn draw(
+        &mut self,
+        camera: &Camera,
+        viewport: Viewport,
+        scale_factor: f32,
+        interpolation: &Interpolation<'_>,
+        ui: &UiFrame<'_>,
     ) -> Result<(), RenderError> {
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
             return Ok(());
@@ -237,12 +283,63 @@ impl<'window> Renderer<'window> {
             }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        let ui_commands = self.draw_ui(&mut encoder, &view, ui);
+
+        self.queue.submit(
+            ui_commands
+                .into_iter()
+                .chain(std::iter::once(encoder.finish())),
+        );
         self.queue.present(frame);
         if reconfigure_after {
             self.surface.configure(&self.device, &self.surface_config);
         }
         Ok(())
+    }
+
+    /// Records a pass that paints `ui` over what `view` already holds. Returns
+    /// the command buffers `egui` prepared, to submit before `encoder`.
+    fn draw_ui(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        ui: &UiFrame<'_>,
+    ) -> Vec<wgpu::CommandBuffer> {
+        if ui.primitives.is_empty() {
+            return Vec::new();
+        }
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [self.surface_config.width, self.surface_config.height],
+            pixels_per_point: ui.pixels_per_point,
+        };
+        let commands = self.ui_painter.update_buffers(
+            &self.device,
+            &self.queue,
+            encoder,
+            ui.primitives,
+            &screen,
+        );
+        // `egui_wgpu` requires a pass without a borrow of the encoder.
+        let mut pass = encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("ui-render-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            })
+            .forget_lifetime();
+        self.ui_painter.render(&mut pass, ui.primitives, &screen);
+        commands
     }
 
     fn ensure_instance_capacity(&mut self, needed: usize) {

@@ -41,9 +41,10 @@ One thin cut through every layer.
 - [x] One entity moving across a flat grid.
 - [x] Headless runner, and a determinism test: the same seed gives the same world
   state hash after N ticks.
-- [ ] egui debug overlay, hidden at start and toggled with F3. The simulation
-  speed controls live only there: the game is played at 1× for now, and
-  changing speed is a development action.
+- [x] egui debug overlay, hidden at start and toggled with F3. The simulation
+  speed controls other than pausing live only there: the game is played at 1×
+  for now, and changing speed is a development action. Pausing is also a
+  player action, on its own key.
 - [x] CI on Linux, Windows and macOS.
 
 **Exit:** the game shows an entity moving on a grid. Headless runs give the same

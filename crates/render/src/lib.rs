@@ -1,4 +1,4 @@
-//! 2D camera math and `wgpu` presentation.
+//! 2D camera math and `wgpu` presentation, with the UI drawn on top.
 //!
 //! Presentation reads snapshots and never touches simulation state directly.
 
@@ -9,4 +9,4 @@ mod scene;
 
 pub use camera::{Camera, CameraConfig, InvalidCameraConfig, ScreenPoint, Viewport, WorldPoint};
 pub use interpolation::Interpolation;
-pub use renderer::{RenderError, Renderer};
+pub use renderer::{RenderError, Renderer, UiFrame};

@@ -10,6 +10,8 @@ publish.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+egui-wgpu.workspace = true
+egui.workspace = true
 expanse-core = { path = "../core" }
 expanse-sim = { path = "../sim" }
 pollster.workspace = true

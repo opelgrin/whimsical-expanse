@@ -22,6 +22,11 @@ length of a day in ticks is configurable.
 panning the camera, whichever button is bound to it. Not an actor's action, and
 not a player command, which reaches the world.
 
+## Presentation
+
+**Debug overlay**: development controls and readings drawn over the world,
+hidden until toggled. Not the game's UI.
+
 ## Space
 
 **Tile**: one cell of the world grid. Positions in the simulation are whole tiles.

@@ -5,9 +5,12 @@ Where the work stands, for someone starting a session. Not the plan (see the
 Rewrite it, never append. The pull request that finishes a work item updates it.
 
 - **Updated:** 2026-11-14
-- **Milestone:** [M0: Foundation slice](ROADMAP.md#m0-foundation-slice)
-- **Last:** interpolated motion. Rendering draws one tick behind, between the
-  snapshots of the simulation's last two ticks, which it publishes together.
-- **Next:** the `egui` debug overlay, the last M0 item (see the
-  [roadmap](ROADMAP.md#m0-foundation-slice)).
+- **Milestone:** [M0: Foundation slice](ROADMAP.md#m0-foundation-slice), every
+  item done.
+- **Last:** the debug overlay. F3 shows it. It holds the speed controls (pause,
+  1×, 2×, 3×), a single step while paused, the current tick and the frame rate.
+  Escape still pauses and resumes.
+- **Next:** close M0: demonstrate its exit criterion, and prune the documents
+  (see [Keeping documents navigable](README.md#keeping-documents-navigable)).
+  Then refine the items of [M1](ROADMAP.md#m1-a-world-to-explore).
 - **Open:** nothing blocking.

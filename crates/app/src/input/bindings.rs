@@ -22,6 +22,8 @@ pub enum InputAction {
     DragPan,
     /// Pause the simulation, or resume it at its previous speed.
     TogglePause,
+    /// Show or hide the debug overlay.
+    ToggleOverlay,
 }
 
 /// A physical key or mouse button.

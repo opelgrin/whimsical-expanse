@@ -114,8 +114,8 @@ run can be replayed.
 
 ## Input
 
-The window is the only code that sees platform events. It passes each one to a
-single input state ([`crates/app/src/input/`](../crates/app/src/input/)), which
+The window is the only code that sees platform events. It translates each one
+for a single input state ([`crates/app/src/input/`](../crates/app/src/input/)), which
 uses bindings to turn keys and mouse buttons into **input actions**. Bindings are
 data, supplied by the game binary like other defaults.
 
@@ -125,9 +125,27 @@ frame then ends, which forgets what happened but keeps what is held. Consumers
 never see platform events, so each is tested without a window and a new control
 adds a binding instead of a branch in the window code.
 
-A UI layer will get each event before the input state, so that scrolling or
-clicking over a panel does not also move the camera. An input action that
-changes the world becomes a player command; the rest stay presentation.
+The UI gets each event first. The input state ignores a press or a scroll that
+the UI consumed, so that clicking or scrolling over a panel does not also move
+the camera. Releases and cursor changes always reach it, so that a button
+pressed over the world and released over a panel is not left held.
+
+An input action that changes the world becomes a player command; the rest stay
+presentation.
+
+## UI
+
+The UI is built with egui. For now it is only the
+[debug overlay](CONTEXT.md#presentation)
+([`crates/app/src/overlay.rs`](../crates/app/src/overlay.rs)). It reads
+snapshots like the rest of presentation and does not act on the simulation
+itself: it returns requests, such as a new speed, which the window applies.
+egui runs every frame, even while the overlay is hidden, so that its view of
+held buttons and the cursor stays current.
+
+The renderer owns everything that touches the GPU. It draws the UI in a second
+pass over the world, from the triangles and texture changes that egui produced
+for the frame.
 
 ## Entities and storage
 

@@ -32,6 +32,21 @@ pub struct CursorMotion {
     pub dy: f32,
 }
 
+/// One window event, as the input state sees it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputEvent {
+    /// A key or mouse button went down or up.
+    Button { button: Button, pressed: bool },
+    /// The cursor moved to a position, in logical pixels.
+    CursorMoved(ScreenPoint),
+    /// The cursor left the window.
+    CursorLeft,
+    /// The mouse wheel or trackpad scrolled.
+    Scrolled(ScrollAmount),
+    /// The window lost the keyboard focus.
+    FocusLost,
+}
+
 /// Held buttons, the cursor, and what happened since the last frame.
 ///
 /// The window reports events as they arrive. Consumers read the state during
@@ -58,6 +73,24 @@ impl InputState {
             cursor: None,
             cursor_motion: CursorMotion { dx: 0.0, dy: 0.0 },
             scroll_lines: 0.0,
+        }
+    }
+
+    /// Records `event`, unless the UI consumed it and it would act on the world.
+    ///
+    /// The UI sees each event first. A press or scroll it consumed, such as a
+    /// click on a panel, must not also pan or zoom. Releases and cursor changes
+    /// always arrive: a button pressed over the world and released over a
+    /// panel would otherwise stay held, and a drag would jump.
+    pub fn handle(&mut self, event: InputEvent, consumed_by_ui: bool) {
+        match event {
+            InputEvent::Button { pressed: true, .. } | InputEvent::Scrolled(_)
+                if consumed_by_ui => {}
+            InputEvent::Button { button, pressed } => self.button_changed(button, pressed),
+            InputEvent::CursorMoved(position) => self.cursor_moved(position),
+            InputEvent::CursorLeft => self.cursor_left(),
+            InputEvent::Scrolled(amount) => self.scrolled(amount),
+            InputEvent::FocusLost => self.focus_lost(),
         }
     }
 
@@ -228,6 +261,41 @@ mod tests {
         assert!(input.scroll_lines().abs() < f32::EPSILON);
         assert!(input.is_held(InputAction::PanUp));
         assert_eq!(input.cursor(), Some(ScreenPoint::new(20.0, 4.0)));
+    }
+
+    /// Catches a panel that does not shield the world (a click or scroll on it
+    /// also dragging or zooming), and a release over a panel being dropped,
+    /// which leaves the camera panning with no key held.
+    #[test]
+    fn ui_consumes_presses_and_scrolls_but_never_releases() {
+        let mut input = input();
+        input.handle(
+            InputEvent::Button {
+                button: W,
+                pressed: true,
+            },
+            false,
+        );
+        input.handle(
+            InputEvent::Button {
+                button: MIDDLE,
+                pressed: true,
+            },
+            true,
+        );
+        input.handle(InputEvent::Scrolled(ScrollAmount::Lines(1.0)), true);
+        assert!(input.is_held(InputAction::PanUp));
+        assert!(!input.is_held(InputAction::DragPan));
+        assert!(input.scroll_lines().abs() < f32::EPSILON);
+
+        input.handle(
+            InputEvent::Button {
+                button: W,
+                pressed: false,
+            },
+            true,
+        );
+        assert!(!input.is_held(InputAction::PanUp));
     }
 
     /// Catches stuck keys or a stuck drag after the window loses focus, and a
