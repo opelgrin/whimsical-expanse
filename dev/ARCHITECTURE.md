@@ -4,9 +4,8 @@ How the system is structured and why. Not the rules every change must keep (see
 [INVARIANTS.md](INVARIANTS.md)), not the plan (see [ROADMAP.md](ROADMAP.md)), not
 what is built right now (see [STATUS.md](STATUS.md) and the code).
 
-> **Status: partly built.** This describes the structure we intend. Where the code
-> disagrees, the code is current and this document needs fixing. As parts are
-> built, their sections are rewritten to describe what is implemented.
+> This document describes the intended structure. The code is authoritative:
+> where the two disagree, this document is fixed.
 
 ## Technology
 
@@ -14,24 +13,24 @@ what is built right now (see [STATUS.md](STATUS.md) and the code).
 - **Platforms:** Linux, Windows and macOS (Apple silicon only).
 - **winit** (windows and input), **wgpu** (rendering), **egui** (debug UI, and a
   first version of the game UI).
-- **Dependencies are minimal.** Use the standard library first. A crate must earn
-  its place: large, hard-to-write pieces (windowing, GPU, UI) do; small utilities
-  we can write ourselves, tailored to our needs, do not. The RNG, the entity
-  storage and deterministic maps are written in-house.
+- **Dependencies are minimal.** Use the standard library first. A crate earns its
+  place by doing a large, hard-to-write job (windowing, GPU, UI). Small utilities
+  are written in-house, tailored to our needs: the RNG, the entity storage and
+  deterministic maps.
 - **bytemuck** for GPU data. It checks at compile time that a struct can be
-  viewed as bytes (no padding, `repr(C)`), which hand-written `unsafe` cannot
-  check. It is already a dependency of the egui/wgpu stack.
-- **Lints and formatting** are described in [STYLE.md](STYLE.md).
+  viewed as bytes, which hand-written `unsafe` cannot. The egui/wgpu stack
+  already depends on it.
+- **Lints and formatting:** see [STYLE.md](STYLE.md).
 
-Bevy was considered and rejected. Its ECS and scheduler would own the world
-and the frame. That conflicts with an engine-independent simulation on its own
-thread, and Bevy's breaking releases every few months add ongoing cost.
+Bevy was rejected. Its ECS and scheduler would own the world and the frame,
+which conflicts with an engine-independent simulation on its own thread. Its
+breaking releases every few months also add ongoing cost.
 
 ## Crates
 
 Packages are named `expanse-<crate>` (for example `expanse-core`), because
-`core` is the name of Rust's own core library. Crates are created when they
-have content, not in advance.
+`core` is the name of Rust's own core library. A crate is created when it has
+content, not in advance.
 
 ```text
 crates/
@@ -47,7 +46,6 @@ crates/
 tools/
   cook/      asset cooking: licensed pack and placeholders
   docs-check/  warns about documents large enough to need a review
-binaries: the game, the headless runner, diagnostics
 ```
 
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
@@ -57,22 +55,23 @@ Dependencies point downwards only. `sim` and `ai` never depend on `render` or
 
 There are two clocks:
 
-- **Action time** is measured in **ticks**. A tick is a fixed unit of time for
-  physical, visible things, such as walking one tile or swinging a tool. The
-  simulation runs **20 ticks per second at 1×**, and 40 or 60 at 2× or 3×. The
-  tick count is a `u64`.
+- **Action time** is measured in **ticks**, a fixed unit for physical, visible
+  things such as walking one tile or swinging a tool. The simulation runs
+  **20 ticks per second at 1×**, and 40 or 60 at 2× or 3×. The tick count is a
+  `u64`.
 - **Calendar time** (time of day, days, seasons) is derived from the tick count.
-  **The length of a day in ticks is configurable**, and the slow pace of the
-  game comes from it. For example, a 30-minute day at 1× is 36,000 ticks.
+  **The length of a day in ticks is configurable**, and it sets the slow pace of
+  the game. For example, a 30-minute day at 1× is 36,000 ticks.
 
-Physical durations are written in ticks. Processes that live at the scale of a
-day (needs, growth, routines, seasons) are written in calendar units ("per day")
-and converted. Changing the length of a day therefore changes the pace of life,
-but never how fast anything moves on screen.
+Physical durations are written in ticks. Processes at the scale of a day (needs,
+growth, routines, seasons) are written in calendar units ("per day") and
+converted. Changing the length of a day therefore changes the pace of life, but
+never how fast anything moves on screen.
 
 ## Runtime shape
 
-The simulation runs on its own thread and owns the world. Each tick:
+The simulation thread owns the world and shares no mutable state with other
+threads. Each tick:
 
 1. **Perceive:** actors update their knowledge from what they perceive. This is
    computed in parallel and committed in order.
@@ -87,45 +86,40 @@ Parallel phases use a thread pool. The borrow checker expresses
 compute-then-commit directly: shared borrows while computing, an exclusive
 borrow while committing.
 
-Rendering and simulation are independent. If a tick is slow, rendering keeps
-running: the camera, the UI and the controls stay responsive, and entities hold
-their last position until the next snapshot. If the simulation falls too far
-behind the selected speed, it drops the time it owes rather than trying to
-catch up indefinitely.
+**Player commands** are applied between ticks and recorded with their tick, so
+a run can be replayed.
 
-**Presentation** never reads the world directly. After each tick, the
-simulation publishes a **snapshot**: an owned projection of what is visible. It
-publishes the snapshots of its last two ticks together, and a newer pair
-replaces one not yet drawn. Rendering draws one tick behind, interpolating motion
-between the two ticks, and never extrapolates. Because the pair is replaced as a
-whole, its ticks are always consecutive, and the interpolated positions are
-exact. Events (e.g. for notifications) travel through a separate _ordered_
-channel, because snapshots can be skipped.
+**Presentation** never reads the world. After each tick, the simulation
+publishes a **snapshot**. Rendering draws one tick behind, interpolating motion
+between the last two snapshots, and never extrapolates (see
+[`simulation_thread.rs`](../crates/app/src/simulation_thread.rs)). Events, such
+as those behind notifications, travel through a separate _ordered_ channel,
+because snapshots can be skipped.
 
-The simulation thread owns the world and shares no mutable state with other
-threads. Commands and snapshots cross thread boundaries only through
-latest-value-wins handoffs. No backlogs or queues are held.
-
-**Player commands** are applied between ticks and recorded with their tick, so a
-run can be replayed.
+Commands and snapshots cross thread boundaries only through latest-value-wins
+handoffs, never through queues, so no backlog builds up. Rendering therefore
+never waits for the simulation. If a tick is slow, the camera, the UI and the
+controls stay responsive, and entities stop at their last snapshot position. If
+the simulation falls too far behind the selected speed, it drops the time it
+owes instead of catching up indefinitely.
 
 ## Input
 
 The window is the only code that sees platform events. It translates each one
-for a single input state ([`crates/app/src/input/`](../crates/app/src/input/)), which
-uses bindings to turn keys and mouse buttons into **input actions**. Bindings are
-data, supplied by the game binary like other defaults.
+for a single input state ([`crates/app/src/input/`](../crates/app/src/input/)),
+which uses bindings to turn keys and mouse buttons into **input actions**.
+Bindings are data, supplied by the game binary like other defaults.
 
-Once per frame, consumers read that state: what is held, what was pressed, the
-cursor, its motion and scrolling. The camera controls are one consumer. The
-frame then ends, which forgets what happened but keeps what is held. Consumers
-never see platform events, so each is tested without a window and a new control
-adds a binding instead of a branch in the window code.
+Once per frame, consumers such as the camera controls read that state: what is
+held, what was pressed, the cursor, its motion and scrolling. The end of the
+frame forgets what happened but keeps what is held. Consumers never see platform
+events, so each is tested without a window, and a new control adds a binding
+instead of a branch in the window code.
 
 The UI gets each event first. The input state ignores a press or a scroll that
-the UI consumed, so that clicking or scrolling over a panel does not also move
-the camera. Releases and cursor changes always reach it, so that a button
-pressed over the world and released over a panel is not left held.
+the UI consumed, so that a click or a scroll over a panel does not also move the
+camera. Releases and cursor changes always reach it, so that a button pressed
+over the world and released over a panel is not left held.
 
 An input action that changes the world becomes a player command; the rest stay
 presentation.
@@ -135,13 +129,13 @@ presentation.
 The UI is built with egui. For now it is only the
 [debug overlay](CONTEXT.md#presentation)
 ([`crates/app/src/overlay.rs`](../crates/app/src/overlay.rs)). It reads
-snapshots like the rest of presentation and does not act on the simulation
-itself: it returns requests, such as a new speed, which the window applies. egui runs every frame, even while the overlay is hidden, so that its
-view of held buttons and the cursor stays current.
+snapshots like the rest of presentation and never acts on the simulation: it
+returns requests, such as a new speed, which the window applies. egui runs every
+frame, even while the overlay is hidden, so that its view of held buttons and
+the cursor stays current.
 
 The renderer owns everything that touches the GPU. It draws the UI in a second
-pass over the world, from the triangles and texture changes that egui produced
-for the frame.
+pass over the world.
 
 ## Entities and storage
 
@@ -161,17 +155,16 @@ pub struct World {
 ```
 
 `Store<T>` is a small sparse set, iterated in a deterministic order. Mechanics
-borrow only the stores they need, so what they touch is visible in their
-signatures.
+borrow only the stores they need, so their signatures show what they touch.
 
-Why: we need composition, because capabilities such as health or inventory cut
-across kinds of entities. The set of capabilities is closed and known at compile
-time, since mechanics are typed code. An ECS's generic machinery (dynamic types,
-queries, schedulers) brings no benefit to that case. Moving to an ECS crate later
-would be a mechanical change.
+Why: capabilities such as health or inventory cut across kinds of entities, so
+we need composition. The set of capabilities is closed and known at compile
+time, because mechanics are typed code. An ECS's generic machinery (dynamic
+types, queries, schedulers) brings nothing to that case. Moving to an ECS crate
+later would be a mechanical change.
 
-Items (and stacks of identical items) are entities too, so ground items, carried
-items and per-item capabilities use the same entity IDs and typed stores as
+Items, and stacks of identical items, are entities too. Ground items, carried
+items and per-item capabilities therefore use the same IDs and typed stores as
 actors and objects (see [items](../docs/SIMULATION.md#representation)).
 
 ## World
@@ -179,9 +172,9 @@ actors and objects (see [items](../docs/SIMULATION.md#representation)).
 - **Positions in the simulation are whole tiles.** An entity moves to a
   neighbouring tile over a number of ticks. Smooth motion exists only in
   rendering.
-- Tiles grouped into chunks. The world is finite and wraps east–west, so every
-  distance and heuristic is wrap-aware.
-- The world has obstacles. Vision cones are occluded by obstacles and terrain.
+- Tiles are grouped into chunks. The world is finite and wraps east–west, so
+  every distance and heuristic is wrap-aware.
+- The world has obstacles. Obstacles and terrain block vision cones.
 - Navigation has two levels: a coarse graph of chunk regions and the portals
   between them, plus exact local paths. The idea comes from Etendu, but it must
   be redesigned for obstacles inside chunks and for the wrap seam.
@@ -189,8 +182,8 @@ actors and objects (see [items](../docs/SIMULATION.md#representation)).
 ## Content
 
 Definitions (items, species, drives, methods…) are loaded and validated into an
-immutable catalog before the simulation starts. The file format is open, and so is
-whether `serde` earns its place.
+immutable catalog before the simulation starts. The file format is open, and so
+is whether `serde` earns its place.
 
 ## Assets
 
@@ -205,7 +198,7 @@ whether `serde` earns its place.
 ## Tooling
 
 - A **headless runner** for tests and reproducible simulations.
-- A **diagnostics runner**: many seeded runs, reports of stuck or looping actors,
-  and the command that reproduces each case.
+- A **diagnostics runner**, a binary: many seeded runs, reports of stuck or
+  looping actors, and the command that reproduces each case.
 - In-game **inspection**: candidate goals and their values, goal chains, and
-  knowledge. This serves debugging and the player alike.
+  knowledge. It serves debugging and the player alike.
