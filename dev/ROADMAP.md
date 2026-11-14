@@ -37,11 +37,13 @@ One thin cut through every layer.
 - [x] Cargo workspace and crate skeletons.
 - [x] Window (winit + wgpu), camera with panning and zoom.
 - [x] Simulation thread, tick loop and snapshots.
-- [ ] Interpolated motion.
+- [x] Interpolated motion.
 - [x] One entity moving across a flat grid.
 - [x] Headless runner, and a determinism test: the same seed gives the same world
   state hash after N ticks.
-- [ ] egui debug overlay.
+- [ ] egui debug overlay, hidden at start and toggled with F3. The simulation
+  speed controls live only there: the game is played at 1× for now, and
+  changing speed is a development action.
 - [x] CI on Linux, Windows and macOS.
 
 **Exit:** the game shows an entity moving on a grid. Headless runs give the same
