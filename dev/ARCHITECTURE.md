@@ -97,10 +97,13 @@ behind the selected speed, it drops the time it owes rather than trying to
 catch up indefinitely.
 
 **Presentation** never reads the world directly. After each tick, the
-simulation publishes a **snapshot**: an owned projection of what is visible. A
-newer snapshot replaces one not yet drawn. Rendering interpolates motion between
-two ticks and never extrapolates. Events (e.g. for notifications)
-travel through a separate _ordered_ channel, because snapshots can be skipped.
+simulation publishes a **snapshot**: an owned projection of what is visible. It
+publishes the snapshots of its last two ticks together, and a newer pair
+replaces one not yet drawn. Rendering draws one tick behind, interpolating motion
+between the two ticks, and never extrapolates. Because the pair is replaced as a
+whole, its ticks are always consecutive, and the interpolated positions are
+exact. Events (e.g. for notifications) travel through a separate _ordered_
+channel, because snapshots can be skipped.
 
 The simulation thread owns the world and shares no mutable state with other
 threads. Commands and snapshots cross thread boundaries only through

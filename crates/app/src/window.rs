@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use expanse_render::{
-    Camera, CameraConfig, InvalidCameraConfig, RenderError, Renderer, ScreenPoint, Viewport,
+    Camera, CameraConfig, Interpolation, InvalidCameraConfig, RenderError, Renderer, ScreenPoint,
+    Viewport,
 };
 use expanse_sim::World;
 use winit::application::ApplicationHandler;
@@ -188,9 +189,9 @@ impl App {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
-        let current = now();
-        let dt = current.saturating_duration_since(self.last_frame);
-        self.last_frame = current;
+        let frame_time = now();
+        let dt = frame_time.saturating_duration_since(self.last_frame);
+        self.last_frame = frame_time;
 
         let Some(graphics) = &self.graphics else {
             return;
@@ -204,10 +205,16 @@ impl App {
         if viewport.width <= 0.0 || viewport.height <= 0.0 || self.occluded {
             return;
         }
-        let snapshot = simulation.latest_snapshot();
-        if let Err(err) = graphics
-            .renderer
-            .render(&self.camera, viewport, scale_factor, &snapshot)
+        let snapshots = simulation.latest_snapshots();
+        let interpolation = Interpolation {
+            previous: &snapshots.previous,
+            current: &snapshots.current,
+            progress: snapshots.progress(frame_time),
+        };
+        if let Err(err) =
+            graphics
+                .renderer
+                .render(&self.camera, viewport, scale_factor, &interpolation)
         {
             self.fatal_error = Some(AppError::Render(err));
             event_loop.exit();

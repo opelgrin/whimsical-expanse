@@ -3,9 +3,8 @@
 use std::error::Error;
 use std::fmt;
 
-use expanse_sim::Snapshot;
-
 use crate::camera::{Camera, CameraUniform, Viewport};
+use crate::interpolation::Interpolation;
 use crate::scene::{QuadInstance, build_instances};
 
 /// Errors that can prevent creating or running the renderer.
@@ -153,7 +152,8 @@ impl<'window> Renderer<'window> {
     }
 
     /// Draws the tiles of the world visible through `camera` and `viewport`,
-    /// then the entities in `snapshot`. Does nothing for an empty viewport.
+    /// then the entities where `interpolation` places them. Does nothing for an
+    /// empty viewport.
     ///
     /// # Errors
     ///
@@ -165,7 +165,7 @@ impl<'window> Renderer<'window> {
         camera: &Camera,
         viewport: Viewport,
         scale_factor: f32,
-        snapshot: &Snapshot,
+        interpolation: &Interpolation<'_>,
     ) -> Result<(), RenderError> {
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
             return Ok(());
@@ -190,7 +190,7 @@ impl<'window> Renderer<'window> {
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        build_instances(&mut self.instances, camera, viewport, snapshot);
+        build_instances(&mut self.instances, camera, viewport, interpolation);
         if !self.instances.is_empty() {
             self.ensure_instance_capacity(self.instances.len());
             self.queue.write_buffer(

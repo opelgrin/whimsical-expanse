@@ -84,6 +84,13 @@ impl TickPacer {
             .map(|tick_length| tick_length.saturating_sub(self.owed))
     }
 
+    /// How long presentation takes to move from one tick to the next at
+    /// `speed`. While paused, a single step takes as long as at normal speed.
+    pub(crate) fn tick_length_on_screen(&self, speed: Speed) -> Duration {
+        self.tick_length(speed)
+            .unwrap_or_else(|| Duration::from_secs(1) / self.base_ticks_per_second)
+    }
+
     fn tick_length(&self, speed: Speed) -> Option<Duration> {
         let ticks_per_second = self.base_ticks_per_second * speed.multiplier();
         (ticks_per_second > 0).then(|| Duration::from_secs(1) / ticks_per_second)
@@ -137,6 +144,16 @@ mod tests {
         let max_lag = TICK * 3;
         let mut pacer = TickPacer::new(RATE, max_lag);
         assert_eq!(pacer.due_ticks(Duration::from_secs(10), Speed::Normal), 3);
+    }
+
+    /// Catches a single step while paused that jumps instead of moving, or
+    /// motion on screen that does not speed up with the simulation.
+    #[test]
+    fn a_tick_lasts_as_long_on_screen_as_in_real_time_and_a_paused_step_as_at_normal_speed() {
+        let pacer = TickPacer::new(RATE, GENEROUS_LAG);
+        assert_eq!(pacer.tick_length_on_screen(Speed::Normal), TICK);
+        assert_eq!(pacer.tick_length_on_screen(Speed::Faster), TICK / 3);
+        assert_eq!(pacer.tick_length_on_screen(Speed::Paused), TICK);
     }
 
     /// Catches time spent paused being caught up on resume.

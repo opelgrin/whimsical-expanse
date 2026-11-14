@@ -1,9 +1,9 @@
 //! Builds the placeholder world scene as quad instances.
 
 use bytemuck::{Pod, Zeroable};
-use expanse_sim::Snapshot;
 
 use crate::camera::{Camera, Viewport};
+use crate::interpolation::Interpolation;
 
 /// One axis-aligned rectangle in world-tile coordinates with a linear RGBA colour.
 #[repr(C)]
@@ -34,7 +34,7 @@ pub(crate) fn build_instances(
     instances: &mut Vec<QuadInstance>,
     camera: &Camera,
     viewport: Viewport,
-    snapshot: &Snapshot,
+    interpolation: &Interpolation<'_>,
 ) {
     instances.clear();
 
@@ -55,22 +55,14 @@ pub(crate) fn build_instances(
         }
     }
 
-    // Before interpolated motion lands in the next slice, draw each entity
-    // at the tile its current motion started from (`motion.from`).
-    for entity in &snapshot.entities {
-        let tile = entity.motion.from;
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "tile coordinates fit within f32"
-        )]
-        let (tx, ty) = (tile.x as f32, tile.y as f32);
+    for (_, position) in interpolation.entity_positions() {
         instances.push(QuadInstance {
-            origin: [tx + 0.12, ty + 0.16],
+            origin: [position.x + 0.12, position.y + 0.16],
             size: [0.76, 0.76],
             color: ENTITY_SHADOW,
         });
         instances.push(QuadInstance {
-            origin: [tx + 0.15, ty + 0.10],
+            origin: [position.x + 0.15, position.y + 0.10],
             size: [0.70, 0.70],
             color: ENTITY_BODY,
         });
@@ -80,11 +72,20 @@ pub(crate) fn build_instances(
 #[cfg(test)]
 mod tests {
     use expanse_core::{grid::TilePos, time::Tick};
-    use expanse_sim::{EntityId, EntityView, Motion, World, WorldConfig};
+    use expanse_sim::{EntityId, EntityView, Motion, Snapshot, World, WorldConfig};
 
     use crate::camera::{CameraConfig, WorldPoint};
 
     use super::*;
+
+    /// Draws `snapshot` as if no time had passed since the previous tick.
+    fn still(snapshot: &Snapshot) -> Interpolation<'_> {
+        Interpolation {
+            previous: snapshot,
+            current: snapshot,
+            progress: 0.0,
+        }
+    }
 
     /// Catches old quads remaining in the reused buffer after an entity disappears.
     #[test]
@@ -113,19 +114,20 @@ mod tests {
         without_entity.entities.clear();
 
         let mut reused = Vec::new();
-        build_instances(&mut reused, &camera, viewport, &with_entity);
+        build_instances(&mut reused, &camera, viewport, &still(&with_entity));
         let with_entity_count = reused.len();
-        build_instances(&mut reused, &camera, viewport, &without_entity);
+        build_instances(&mut reused, &camera, viewport, &still(&without_entity));
 
         let mut fresh = Vec::new();
-        build_instances(&mut fresh, &camera, viewport, &without_entity);
+        build_instances(&mut fresh, &camera, viewport, &still(&without_entity));
         assert!(with_entity_count > fresh.len(), "the entity is represented");
         assert_eq!(reused, fresh);
     }
 
-    /// Catches entities drawn on the wrong tile or behind the grid.
+    /// Catches entities drawn behind the grid, or at a position other than the
+    /// interpolated one, such as the tile their motion started from.
     #[test]
-    fn entities_are_drawn_at_their_motion_start_after_the_grid() {
+    fn entities_are_drawn_at_their_interpolated_position_after_the_grid() {
         let camera = Camera::new(
             CameraConfig {
                 initial_centre: WorldPoint::new(10.0, 4.0),
@@ -137,27 +139,33 @@ mod tests {
             8,
         )
         .expect("valid camera");
-        let tile = TilePos::new(10, 4);
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
+        // A step east from tile 10 to tile 11, completed at the current tick.
+        let at_tick = |tick| Snapshot {
+            tick: Tick::new(tick),
             entities: vec![EntityView {
                 id: EntityId(0),
                 motion: Motion {
-                    from: tile,
+                    from: TilePos::new(10, 4),
                     to: TilePos::new(11, 4),
                     start: Tick::ZERO,
                     end: Tick::new(2),
                 },
             }],
         };
+        let (previous, current) = (at_tick(1), at_tick(2));
         let viewport = Viewport::new(200.0, 80.0);
         let mut grid = Vec::new();
-        let mut empty_snapshot = snapshot.clone();
+        let mut empty_snapshot = current.clone();
         empty_snapshot.entities.clear();
-        build_instances(&mut grid, &camera, viewport, &empty_snapshot);
+        build_instances(&mut grid, &camera, viewport, &still(&empty_snapshot));
 
         let mut scene = Vec::new();
-        build_instances(&mut scene, &camera, viewport, &snapshot);
+        let interpolation = Interpolation {
+            previous: &previous,
+            current: &current,
+            progress: 1.0,
+        };
+        build_instances(&mut scene, &camera, viewport, &interpolation);
         assert!(
             scene.starts_with(&grid),
             "entities must be drawn after the grid"
@@ -165,7 +173,7 @@ mod tests {
         let entity_quads = &scene[grid.len()..];
         assert!(!entity_quads.is_empty(), "the entity is represented");
         for quad in entity_quads {
-            assert_eq!(quad.origin[0].floor(), 10.0);
+            assert_eq!(quad.origin[0].floor(), 11.0);
             assert_eq!(quad.origin[1].floor(), 4.0);
         }
     }
