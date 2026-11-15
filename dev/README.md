@@ -16,6 +16,8 @@ which can be read without the code.
 | How does the system fit together? | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | What comes next, in order? | [ROADMAP.md](ROADMAP.md) |
 | Where are we right now? | [STATUS.md](STATUS.md) |
+| What does the current milestone's work involve? | its spec in [specs/](specs/) |
+| What facts have we checked, such as how the asset pack is built? | [findings/](findings/) |
 | How do we write Rust here? | [STYLE.md](STYLE.md) |
 | How do we test? | [TESTING.md](TESTING.md) |
 | How do we run the checks and other commands? | the [justfile](../justfile); `just` lists the recipes |
@@ -24,7 +26,7 @@ which can be read without the code.
 
 If a kind of information has no row, add a row, not a new document.
 
-Folders planned, each created together with its first document and not before:
+Folders, each created together with its first document and not before:
 
 - `specs/`: requirements for a work item. Deleted when the work is done.
 - `proposals/`: designs still under discussion. Deleted once adopted (what lasts
