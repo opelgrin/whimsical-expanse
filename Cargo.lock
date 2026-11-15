@@ -594,6 +594,7 @@ dependencies = [
  "expanse-core",
  "expanse-render",
  "expanse-sim",
+ "expanse-terrain",
  "winit",
 ]
 
@@ -631,12 +632,21 @@ dependencies = [
  "egui-wgpu",
  "expanse-core",
  "expanse-sim",
+ "expanse-terrain",
  "pollster",
  "wgpu",
 ]
 
 [[package]]
 name = "expanse-sim"
+version = "0.1.0"
+dependencies = [
+ "expanse-core",
+ "expanse-terrain",
+]
+
+[[package]]
+name = "expanse-terrain"
 version = "0.1.0"
 dependencies = [
  "expanse-core",

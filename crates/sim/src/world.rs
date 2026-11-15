@@ -8,9 +8,11 @@ use expanse_core::grid::TilePos;
 use expanse_core::hash::FixedBuildHasher;
 use expanse_core::rng::Rng;
 use expanse_core::time::Tick;
+use expanse_terrain::Terrain;
 
+use crate::placeholder;
 use crate::snapshot::{EntityId, EntityView, Snapshot};
-use crate::wanderer::{Bounds, Wanderer};
+use crate::wanderer::Wanderer;
 
 /// Everything a world is created from.
 ///
@@ -20,10 +22,10 @@ use crate::wanderer::{Bounds, Wanderer};
 pub struct WorldConfig {
     /// The seed every random stream derives from.
     pub seed: u64,
-    /// Width of the grid, in tiles.
-    pub width: i32,
-    /// Height of the grid, in tiles.
-    pub height: i32,
+    /// Width of the world, in chunks.
+    pub world_width_chunks: u16,
+    /// Height of the world, in chunks.
+    pub world_height_chunks: u16,
     /// How many ticks the wanderer takes to move one tile.
     pub ticks_per_step: u64,
 }
@@ -31,7 +33,7 @@ pub struct WorldConfig {
 /// Why a [`WorldConfig`] was rejected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvalidConfig {
-    /// The grid has no tiles.
+    /// The world has no tiles.
     EmptyGrid,
     /// Moving one tile would take no time.
     ZeroTicksPerStep,
@@ -40,7 +42,7 @@ pub enum InvalidConfig {
 impl fmt::Display for InvalidConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyGrid => write!(f, "the grid must be at least one tile wide and high"),
+            Self::EmptyGrid => write!(f, "the world must be at least one chunk wide and high"),
             Self::ZeroTicksPerStep => write!(f, "moving one tile must take at least one tick"),
         }
     }
@@ -58,6 +60,7 @@ mod stream {
 pub struct World {
     config: WorldConfig,
     tick: Tick,
+    terrain: Terrain,
     wanderer: Wanderer,
 }
 
@@ -69,37 +72,33 @@ impl World {
     ///
     /// # Errors
     ///
-    /// Returns an error if the grid is empty or a step would take no time.
+    /// Returns an error if the world is empty or a step would take no time.
     pub fn new(config: WorldConfig) -> Result<Self, InvalidConfig> {
-        if config.width < 1 || config.height < 1 {
-            return Err(InvalidConfig::EmptyGrid);
-        }
         if config.ticks_per_step == 0 {
             return Err(InvalidConfig::ZeroTicksPerStep);
         }
+        let terrain = placeholder::terrain(config.world_width_chunks, config.world_height_chunks)
+            .ok_or(InvalidConfig::EmptyGrid)?;
+        let grid = terrain.grid();
+        let centre = TilePos::new(grid.width() / 2, grid.height() / 2);
         let rng = Rng::from_stream(
             config.seed,
             &[stream::WANDERER, u64::from(Self::WANDERER_ID.0)],
         );
-        let centre = TilePos::new(config.width / 2, config.height / 2);
-        let wanderer = Wanderer::new(
-            centre,
-            Tick::ZERO,
-            rng,
-            bounds(&config),
-            config.ticks_per_step,
-        );
+        let wanderer = Wanderer::new(centre, Tick::ZERO, rng, &terrain, config.ticks_per_step);
         Ok(Self {
             config,
             tick: Tick::ZERO,
+            terrain,
             wanderer,
         })
     }
 
-    /// The grid width and height in tiles.
+    /// The world's width and height in tiles.
     #[must_use]
     pub const fn dimensions(&self) -> (i32, i32) {
-        (self.config.width, self.config.height)
+        let grid = self.terrain.grid();
+        (grid.width(), grid.height())
     }
 
     /// The current tick.
@@ -112,10 +111,10 @@ impl World {
     pub fn advance(&mut self) {
         self.tick = self.tick.after(1);
         self.wanderer
-            .update(self.tick, bounds(&self.config), self.config.ticks_per_step);
+            .update(self.tick, &self.terrain, self.config.ticks_per_step);
     }
 
-    /// A hash of the complete simulation state.
+    /// A hash of the complete simulation state, terrain included.
     ///
     /// Equal states give equal hashes for a given binary. Used to check that
     /// runs are reproducible; it is not stable across code changes.
@@ -124,23 +123,18 @@ impl World {
         FixedBuildHasher::default().hash_one(self)
     }
 
-    /// An owned projection of the current state, for presentation.
+    /// An owned projection of the current state, for presentation. It shares
+    /// the terrain instead of copying it.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
             tick: self.tick,
+            terrain: self.terrain.clone(),
             entities: vec![EntityView {
                 id: Self::WANDERER_ID,
                 motion: self.wanderer.motion(),
             }],
         }
-    }
-}
-
-const fn bounds(config: &WorldConfig) -> Bounds {
-    Bounds {
-        width: config.width,
-        height: config.height,
     }
 }
 
@@ -151,8 +145,8 @@ mod tests {
     fn config(seed: u64) -> WorldConfig {
         WorldConfig {
             seed,
-            width: 16,
-            height: 9,
+            world_width_chunks: 2,
+            world_height_chunks: 1,
             ticks_per_step: 5,
         }
     }
@@ -205,6 +199,23 @@ mod tests {
         assert!(motion.start <= world.tick() && world.tick() < motion.end);
     }
 
+    /// Catches a wanderer that starts on an obstacle, or that moves on other
+    /// terrain than the world's, by checking it against the terrain that
+    /// presentation is given.
+    #[test]
+    fn the_wanderer_never_stands_on_an_obstacle() {
+        for seed in 0..5 {
+            let mut world = World::new(config(seed)).expect("valid config");
+            for _ in 0..2_000 {
+                let snapshot = world.snapshot();
+                let motion = snapshot.entities[0].motion;
+                assert!(!snapshot.terrain.is_blocked(motion.from), "{motion:?}");
+                assert!(!snapshot.terrain.is_blocked(motion.to), "{motion:?}");
+                world.advance();
+            }
+        }
+    }
+
     /// Catches randomness that is ignored or not seeded, which would make every
     /// world behave identically. Compares movement rather than state hashes:
     /// the hash includes the generator's internal state, so it differs between
@@ -227,11 +238,18 @@ mod tests {
     /// with nowhere to stand.
     #[test]
     fn rejects_configs_that_cannot_run() {
-        let empty = WorldConfig {
-            width: 0,
-            ..config(1)
-        };
-        assert_eq!(World::new(empty), Err(InvalidConfig::EmptyGrid));
+        for empty in [
+            WorldConfig {
+                world_width_chunks: 0,
+                ..config(1)
+            },
+            WorldConfig {
+                world_height_chunks: 0,
+                ..config(1)
+            },
+        ] {
+            assert_eq!(World::new(empty), Err(InvalidConfig::EmptyGrid));
+        }
         let instant = WorldConfig {
             ticks_per_step: 0,
             ..config(1)

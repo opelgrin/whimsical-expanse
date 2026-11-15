@@ -16,5 +16,8 @@ expanse-render = { path = "../render" }
 expanse-sim = { path = "../sim" }
 winit.workspace = true
 
+[dev-dependencies]
+expanse-terrain = { path = "../terrain" }
+
 [lints]
 workspace = true

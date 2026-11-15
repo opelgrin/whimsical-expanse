@@ -4,6 +4,10 @@
 //! most recent consecutive snapshots. The positions are exact, not estimates: a
 //! motion starts and ends on whole ticks, so between two consecutive ticks an
 //! entity follows one motion, in a straight line at constant speed.
+//!
+//! Every path between two points goes the short way round the world, so a
+//! step across the seam is drawn as a one-tile move. Positions are canonical:
+//! `x` lies in `0..width`.
 
 use expanse_core::grid::TilePos;
 use expanse_core::hash::FixedHashMap;
@@ -42,19 +46,30 @@ impl Interpolation<'_> {
             .map(|entity| (entity.id, entity.motion))
             .collect();
         let progress = self.progress.clamp(0.0, 1.0);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "world widths in tiles are exact in f32"
+        )]
+        let width = self.current.terrain.grid().width() as f32;
         self.current.entities.iter().map(move |entity| {
-            let to = position_at(entity.motion, self.current.tick);
+            let to = position_at(entity.motion, self.current.tick, width);
             let position = previous.get(&entity.id).map_or(to, |&motion| {
-                lerp(position_at(motion, previous_tick), to, progress)
+                lerp(
+                    position_at(motion, previous_tick, width),
+                    to,
+                    progress,
+                    width,
+                )
             });
             (entity.id, position)
         })
     }
 }
 
-/// Where `motion` places its entity at `tick`: at `from` until the motion
-/// starts, at `to` once it ends, and in a straight line between them.
-fn position_at(motion: Motion, tick: Tick) -> WorldPoint {
+/// Where `motion` places its entity at `tick`, in a world `width` tiles wide:
+/// at `from` until the motion starts, at `to` once it ends, and in a straight
+/// line between them.
+fn position_at(motion: Motion, tick: Tick, width: f32) -> WorldPoint {
     let duration = motion.end.count().saturating_sub(motion.start.count());
     let elapsed = tick
         .count()
@@ -69,7 +84,12 @@ fn position_at(motion: Motion, tick: Tick) -> WorldPoint {
     } else {
         elapsed as f32 / duration as f32
     };
-    lerp(tile_point(motion.from), tile_point(motion.to), fraction)
+    lerp(
+        tile_point(motion.from),
+        tile_point(motion.to),
+        fraction,
+        width,
+    )
 }
 
 /// The corner of `tile` with the smallest coordinates.
@@ -81,21 +101,42 @@ fn tile_point(tile: TilePos) -> WorldPoint {
     WorldPoint::new(tile.x as f32, tile.y as f32)
 }
 
-/// The point `fraction` of the way from `from` to `to`.
-fn lerp(from: WorldPoint, to: WorldPoint, fraction: f32) -> WorldPoint {
+/// The point `fraction` of the way from `from` to `to`, going the short way
+/// round a world `width` tiles wide. The result is canonical.
+fn lerp(from: WorldPoint, to: WorldPoint, fraction: f32, width: f32) -> WorldPoint {
+    let eastwards = (to.x - from.x).rem_euclid(width);
+    let dx = if eastwards > width * 0.5 {
+        eastwards - width
+    } else {
+        eastwards
+    };
     WorldPoint::new(
-        from.x + (to.x - from.x) * fraction,
+        (from.x + dx * fraction).rem_euclid(width),
         from.y + (to.y - from.y) * fraction,
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use expanse_sim::EntityView;
+    use expanse_sim::{EntityView, World, WorldConfig};
+    use expanse_terrain::Terrain;
 
     use super::*;
 
     const ID: EntityId = EntityId(7);
+
+    /// The terrain of a small world. Only its width matters here.
+    fn terrain() -> Terrain {
+        World::new(WorldConfig {
+            seed: 1,
+            world_width_chunks: 1,
+            world_height_chunks: 1,
+            ticks_per_step: 1,
+        })
+        .expect("valid world")
+        .snapshot()
+        .terrain
+    }
 
     fn motion(from: (i32, i32), to: (i32, i32), start: u64, end: u64) -> Motion {
         Motion {
@@ -109,6 +150,7 @@ mod tests {
     fn snapshot(tick: u64, entities: &[(EntityId, Motion)]) -> Snapshot {
         Snapshot {
             tick: Tick::new(tick),
+            terrain: terrain(),
             entities: entities
                 .iter()
                 .map(|&(id, motion)| EntityView { id, motion })
@@ -158,6 +200,30 @@ mod tests {
             0.5,
         );
         assert_eq!(drawn, vec![(ID, WorldPoint::new(2.75, 3.0))]);
+    }
+
+    /// Catches a step across the seam drawn as a sweep across the whole world,
+    /// whether inside one motion or between the positions of two ticks, and
+    /// positions left outside the world. The previous tick is halfway through
+    /// the step and the current one at its end; drawn a quarter of the way
+    /// between them, the entity is five eighths of the way across, worked out
+    /// by hand. A progress of a half would hide a path taken the long way
+    /// round, which wraps to the same point.
+    #[test]
+    fn a_step_across_the_seam_is_drawn_as_a_one_tile_move_both_ways() {
+        let east_edge = terrain().grid().width() - 1;
+        #[expect(clippy::cast_precision_loss, reason = "a small test width")]
+        let seam = (east_edge + 1) as f32;
+        let eastwards = motion((east_edge, 3), (0, 3), 10, 14);
+        let westwards = motion((0, 3), (east_edge, 3), 10, 14);
+        for (step, expected) in [(eastwards, seam - 0.375), (westwards, seam - 0.625)] {
+            let drawn = positions(
+                &snapshot(12, &[(ID, step)]),
+                &snapshot(14, &[(ID, step)]),
+                0.25,
+            );
+            assert_eq!(drawn, vec![(ID, WorldPoint::new(expected, 3.0))]);
+        }
     }
 
     /// The never-extrapolate rule: catches progress that is not clamped, which

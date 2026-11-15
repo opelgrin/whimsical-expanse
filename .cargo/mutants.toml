@@ -24,6 +24,15 @@ exclude_re = [
     # The placeholder checkerboard colours are checked by eye, not by pixel tests.
     '^crates/render/src/scene\.rs:.*checkerboard_color',
 
+    # The placeholder terrain pattern means nothing, so no test pins its
+    # values. Tests check only that it is usable: the wanderer starts on a free
+    # tile and never steps onto an obstacle. Generation replaces it.
+    '^crates/sim/src/placeholder\.rs:',
+
+    # Equivalent where it matters: at exactly half the width, both ways round
+    # are equally short, and either is a correct path.
+    'replace > with >= in lerp',
+
     # Error and usage messages: wording, not behaviour.
     'impl fmt::Display for',
     'report_usage_error',
