@@ -52,13 +52,16 @@ hash every time, on every platform.
 
 ## M1: A world to explore
 
+Refined in [specs/M1.md](specs/M1.md).
+
 - Generation: elevation, temperature and moisture, with latitude for climate,
   giving biomes. Obstacles.
 - Chunks, east–west wrapping.
 - Batched tile renderer with placeholder art.
 - Calendar with days and seasons.
 - Tile inspector.
-- Asset pipeline: provenance manifest, `cook` tool, logical asset IDs. The real
+- Asset pipeline: provenance manifest, `cook` tool, logical asset IDs,
+  placeholders drawn from a committed spec. The real
   pack is tried locally (tiles and seasonal variants) to confirm we can work with
   it. It never enters git.
 
@@ -99,3 +102,4 @@ One line each, refined when reached. Together they lead to the
 - **Farming and a simple economy.**
 - **A first dungeon.**
 - **Coarse simulation far from the player.**
+- **Saving and loading:** the whole world, terrain included.
