@@ -87,6 +87,10 @@ season.
   rectangle and an anchor (the point at its foot), written by hand or found
   from its non-transparent pixels. Trees cover the tiles behind them, so
   sprites are drawn in order of their anchor's `y`.
+- **Other large objects:** houses span 5–8 tiles in width and 6–8 in height;
+  fallen logs are 8×2 or 2×8 tiles and large stumps about 4×2; statues, mineral
+  rocks and altars also span several tiles. The image does not say which tiles
+  an object blocks: a house blocks its base, not its roof.
 - **Creatures** use 32×32 frames, one animation per file. For example, a deer's
   walk is 4 frames in each of 3 directions (side, front, back); the other side
   is presumably the side frames mirrored.
