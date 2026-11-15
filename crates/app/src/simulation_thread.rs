@@ -319,8 +319,8 @@ mod tests {
     fn world() -> World {
         World::new(WorldConfig {
             seed: 11,
-            width: 8,
-            height: 8,
+            world_width_chunks: 1,
+            world_height_chunks: 1,
             ticks_per_step: 3,
         })
         .expect("valid config")

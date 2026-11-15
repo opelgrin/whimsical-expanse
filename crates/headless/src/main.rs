@@ -10,10 +10,10 @@ use std::process::ExitCode;
 
 use expanse_sim::{World, WorldConfig};
 
-/// Grid and movement parameters for headless runs. They only need to exercise
+/// World and movement parameters for headless runs. They only need to exercise
 /// the simulation; they are not game tuning.
-const WIDTH: i32 = 64;
-const HEIGHT: i32 = 64;
+const WORLD_WIDTH_CHUNKS: u16 = 2;
+const WORLD_HEIGHT_CHUNKS: u16 = 2;
 const TICKS_PER_STEP: u64 = 6;
 
 struct Options {
@@ -31,8 +31,8 @@ fn main() -> ExitCode {
     };
     let config = WorldConfig {
         seed: options.seed,
-        width: WIDTH,
-        height: HEIGHT,
+        world_width_chunks: WORLD_WIDTH_CHUNKS,
+        world_height_chunks: WORLD_HEIGHT_CHUNKS,
         ticks_per_step: TICKS_PER_STEP,
     };
     let mut world = World::new(config).expect("the headless parameters are valid");

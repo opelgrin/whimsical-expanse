@@ -17,5 +17,8 @@ expanse-sim = { path = "../sim" }
 pollster.workspace = true
 wgpu.workspace = true
 
+[dev-dependencies]
+expanse-terrain = { path = "../terrain" }
+
 [lints]
 workspace = true

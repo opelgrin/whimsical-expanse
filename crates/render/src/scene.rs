@@ -92,8 +92,8 @@ mod tests {
     fn rebuilding_a_scene_discards_instances_from_the_previous_snapshot() {
         let world = World::new(WorldConfig {
             seed: 1,
-            width: 4,
-            height: 3,
+            world_width_chunks: 1,
+            world_height_chunks: 1,
             ticks_per_step: 2,
         })
         .expect("valid world");
@@ -139,9 +139,17 @@ mod tests {
             8,
         )
         .expect("valid camera");
+        let world = World::new(WorldConfig {
+            seed: 1,
+            world_width_chunks: 1,
+            world_height_chunks: 1,
+            ticks_per_step: 2,
+        })
+        .expect("valid world");
         // A step east from tile 10 to tile 11, completed at the current tick.
         let at_tick = |tick| Snapshot {
             tick: Tick::new(tick),
+            terrain: world.snapshot().terrain,
             entities: vec![EntityView {
                 id: EntityId(0),
                 motion: Motion {

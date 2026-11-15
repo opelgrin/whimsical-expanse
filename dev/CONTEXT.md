@@ -25,12 +25,16 @@ not a player command, which reaches the world.
 ## Presentation
 
 **Snapshot**: an owned projection of the world at one tick, published for
-presentation. It holds no references into the world.
+presentation. It holds no references into the world. It shares the terrain's
+immutable chunks rather than copying them.
 
 **Debug overlay**: development controls and readings drawn over the world,
 hidden until toggled. Not the game's UI.
 
 ## Space
+
+**World**: the whole simulation state at one tick: the terrain, what lives on
+it and the time. The simulation thread owns it. The map alone is the terrain.
 
 **Tile**: one cell of the world grid. Positions in the simulation are whole tiles.
 
@@ -38,6 +42,29 @@ hidden until toggled. Not the game's UI.
 concept, never a rendering one.
 
 **Wrap**: the world joins its east and west edges; north and south are edges.
+
+**Seam**: where the last column meets the first.
+
+**Canonical**: a tile position whose `x` lies inside the world's columns. Every
+column has many positions, one canonical; rows have only one.
+
+**Terrain**: every tile of the world and what it holds: its fields, its biome
+and its obstacle.
+
+**Field**: a value that varies over the terrain and selects biomes: elevation,
+temperature, moisture.
+
+**Biome**: a kind of land, chosen for each tile from its fields by the biome
+table, which content supplies.
+
+**Obstacle**: something on the terrain that blocks movement, such as a rock or
+a tree. Part of the terrain, not an entity.
+
+**Footprint**: the tiles an obstacle blocks, given as offsets from its anchor.
+Unrelated to the size of its sprite.
+
+**Anchor**: the tile of a footprint that holds the obstacle itself; the others
+point to it.
 
 ## Entities
 

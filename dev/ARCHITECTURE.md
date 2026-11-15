@@ -35,7 +35,7 @@ content, not in advance.
 ```text
 crates/
   core/      IDs, coordinates (wrapping east–west), RNG streams, time
-  world/     terrain, chunks, navigation
+  terrain/   tiles in chunks, fields, biomes, obstacles, navigation
   sim/       world state, mechanics, perception, knowledge, events, snapshots
   ai/        drives, selection, methods, activities
   content/   loading and validating content definitions

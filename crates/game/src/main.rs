@@ -13,10 +13,11 @@ use expanse_app::window::{self, AppConfig};
 use expanse_render::{CameraConfig, WorldPoint};
 use expanse_sim::{World, WorldConfig};
 
-// Simulation defaults for M0.
+// Simulation defaults. The world size is a placeholder until generation
+// arrives and its cost can be measured.
 const DEFAULT_SEED: u64 = 1;
-const GRID_WIDTH: i32 = 32;
-const GRID_HEIGHT: i32 = 20;
+const WORLD_WIDTH_CHUNKS: u16 = 2;
+const WORLD_HEIGHT_CHUNKS: u16 = 1;
 const TICKS_PER_STEP: u64 = 10;
 const BASE_TICKS_PER_SECOND: u32 = 20;
 const MAX_SIMULATION_LAG: Duration = Duration::from_millis(250);
@@ -45,19 +46,20 @@ fn main() -> ExitCode {
 
     let world = World::new(WorldConfig {
         seed,
-        width: GRID_WIDTH,
-        height: GRID_HEIGHT,
+        world_width_chunks: WORLD_WIDTH_CHUNKS,
+        world_height_chunks: WORLD_HEIGHT_CHUNKS,
         ticks_per_step: TICKS_PER_STEP,
     })
     .expect("the default game world parameters are valid");
 
     let pacer = TickPacer::new(BASE_TICKS_PER_SECOND, MAX_SIMULATION_LAG);
 
+    let (width, height) = world.dimensions();
     #[expect(
         clippy::cast_precision_loss,
-        reason = "default grid dimensions fit accurately in f32"
+        reason = "default world dimensions fit accurately in f32"
     )]
-    let initial_centre = WorldPoint::new(GRID_WIDTH as f32 * 0.5, GRID_HEIGHT as f32 * 0.5);
+    let initial_centre = WorldPoint::new(width as f32 * 0.5, height as f32 * 0.5);
 
     let app_config = AppConfig {
         title: WINDOW_TITLE.to_owned(),

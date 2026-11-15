@@ -442,6 +442,7 @@ mod tests {
     use expanse_render::WorldPoint;
     use expanse_render::camera::VisibleTileRange;
     use expanse_sim::WorldConfig;
+    use expanse_terrain::CHUNK_SIZE;
 
     use super::*;
 
@@ -472,11 +473,12 @@ mod tests {
     fn camera_uses_the_world_grid_for_panning_and_visible_tiles() {
         let world = World::new(WorldConfig {
             seed: 1,
-            width: 7,
-            height: 3,
+            world_width_chunks: 2,
+            world_height_chunks: 1,
             ticks_per_step: 2,
         })
         .expect("valid world");
+        let (width, height) = (2 * CHUNK_SIZE, CHUNK_SIZE);
         let mut camera = camera_for_world(
             &world,
             CameraConfig {
@@ -488,15 +490,17 @@ mod tests {
         )
         .expect("valid camera");
 
-        camera.pan_by_screen_offset(1000.0, 1000.0);
-        assert_eq!(camera.centre(), WorldPoint::new(7.0, 3.0));
+        camera.pan_by_screen_offset(10_000.0, 10_000.0);
+        #[expect(clippy::cast_precision_loss, reason = "a small test world")]
+        let far_corner = WorldPoint::new(width as f32, height as f32);
+        assert_eq!(camera.centre(), far_corner);
         assert_eq!(
-            camera.visible_tiles(Viewport::new(1000.0, 1000.0)),
+            camera.visible_tiles(Viewport::new(100_000.0, 100_000.0)),
             Some(VisibleTileRange {
                 min_x: 0,
-                max_x: 6,
+                max_x: width - 1,
                 min_y: 0,
-                max_y: 2,
+                max_y: height - 1,
             })
         );
     }
