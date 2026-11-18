@@ -68,8 +68,9 @@ That implies:
 | Topic | Decision |
 |---|---|
 | Player | One character. No household. |
-| Death | The player character can die. Game over or a new character: see [open questions](#open-questions). Mortality comes early in development. |
+| Death | The player character can die. The next character is a newcomer the player creates, who arrives in the same world, which goes on. Whether game over stays an option is an [open question](#open-questions). Mortality comes early in development. |
 | Generations | Aging, descendants and kids are not planned initially. If kids come later, think Fable II/III, not The Sims. |
+| Population | Renewed, so the world never empties. A dead actor leaves a vacancy, such as a village without its blacksmith, which a newcomer fills after a random delay: a situation for a while, ended at a time the player cannot predict. Animals are born. People arrive from outside the world: settlers to fill vacancies, and travellers who come with a purpose, stay a while and leave. Nothing arrives, is born or happens because the player is near. See [population](SIMULATION.md#population). |
 | World | The surface is finite but large; exploration should be engaging. It wraps east–west (a cylinder), so climate can still follow latitude. |
 | Spaces | Building interiors and dungeons are separate spaces, as in 2D Zelda games and Stardew Valley, not areas of the surface under a roof. Passages, such as doors, stairs and cave mouths, connect the spaces. The camera shows one space at a time, and vision never crosses a passage. All spaces share one clock and the same rules; each has its own size. |
 | Dungeons | Persistent. A monster killed stays dead and loot taken stays taken. A cleared dungeon fills up again only when actors move in, not by a reset. |
@@ -137,13 +138,12 @@ Technical slices come before it. *(Proposed; to be refined.)*
 ## Open questions
 
 - **Aspirations:** what form do they take?
-- **Succession:** when the player character dies, is it game over or a new
-  character, and how is the new one chosen?
+- **Succession:** whether game over stays an option when the player character
+  dies, and, once descendants exist, whether the player can continue as one.
 - **Length of a day:** the default, given the slow pace we want. It is
   configurable in any case.
-- **Population renewal:** actors die, and nothing replaces them yet, so the
-  world would slowly empty and a cleared dungeon would stay empty. Births,
-  migration and newcomers moving into empty places are candidates.
+- **Leaving:** whether villagers can leave the world through passages to the
+  outside, as travellers do.
 - **Other worlds:** whether the game has worlds besides the surface, reached
   through passages such as portals. Spaces allow any number of them, of any
   size, not aligned with the surface.
