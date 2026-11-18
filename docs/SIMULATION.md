@@ -133,7 +133,7 @@ belief is corrected, and the actor decides again.
 |---|---|---|---|
 | Self | own body, meters, inventory, skills | actor state | never; not treated as knowledge |
 | Shared rules | item effects, known methods, dangers | per culture or species | no |
-| Map | discovered terrain and topology, coarse | per actor, compact | no, or very slowly (deferred) |
+| Map | discovered terrain and topology, passages included, coarse | per actor, compact | no, or very slowly (deferred) |
 | Things | what is where, always with when it was seen | per actor, bounded | yes, evicted |
 | People | known actors: relationships, learned traits, last known place and time | per actor, bounded but sticky | rarely; close relations never |
 | Memories | notable events | per actor, bounded | yes (later feature) |
@@ -145,6 +145,9 @@ belief is corrected, and the actor decides again.
 - **Every fact records when it was seen**, so actors can treat old information
   as less reliable.
 - **Absence is perceived:** seeing an empty bush updates the belief.
+- **Routes use known passages only.** An actor plans a route only through
+  passages it knows. Beyond them, reaching a place is exploration: an actor
+  that does not know a dungeon plans as far as its entrance.
 
 ### The player
 

@@ -71,6 +71,8 @@ seasons change, with placeholder art or, locally, the real pack.
 ## M2: Bodies, perception and movement
 
 - Entities and typed stores, with removal and stale references handled.
+- Spaces and passages in positions, the spatial index and navigation, though
+  the surface is the only space for now.
 - Two-level navigation with obstacles and the wrap.
 - Vision cones with occlusion, and bounded memory of facts.
 - The player character as an actor, with "go there" orders.
@@ -100,6 +102,6 @@ One line each, refined when reached. Together they lead to the
 - **Social:** proposals, shared activities, relationships, routines.
 - **The player layer:** obedience, direct control, fog of war, notifications.
 - **Farming and a simple economy.**
-- **A first dungeon.**
-- **Coarse simulation far from the player.**
+- **A first dungeon, and building interiors.**
+- **Throttled simulation far from the player.**
 - **Saving and loading:** the whole world, terrain included.

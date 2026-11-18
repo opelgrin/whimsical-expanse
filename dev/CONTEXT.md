@@ -31,24 +31,41 @@ immutable chunks rather than copying them.
 **Debug overlay**: development controls and readings drawn over the world,
 hidden until toggled. Not the game's UI.
 
-## Space
+## Spaces and terrain
 
-**World**: the whole simulation state at one tick: the terrain, what lives on
-it and the time. The simulation thread owns it. The map alone is the terrain.
+**World**: the whole simulation state at one tick: every space, what lives in
+it and the time. The simulation thread owns it. Not the terrain alone.
+
+**Space**: a grid of tiles with its own terrain, size and shape, such as the
+surface, a building interior, a dungeon floor or another world. Every position
+is in one space.
+
+**Surface**: the main space, finite but large, which wraps east–west.
+
+**Passage**: a link from a tile of one space to a tile of another, such as a
+door, stairs, a cave mouth or a portal.
+
+**Near**: within the radius of full simulation around the player character,
+measured through passages. Everything else is **far**.
+
+**Throttling**: running the simulation of far chunks every N ticks instead of
+every tick.
 
 **Tile**: one cell of the world grid. Positions in the simulation are whole tiles.
 
 **Chunk**: a square block of tiles, stored and loaded as a unit. A storage
 concept, never a rendering one.
 
-**Wrap**: the world joins its east and west edges; north and south are edges.
+**Wrap**: a space joins its east and west edges; north and south are edges.
+The surface wraps.
 
-**Seam**: where the last column meets the first.
+**Seam**: where the last column of a wrapping space meets the first.
 
-**Canonical**: a tile position whose `x` lies inside the world's columns. Every
-column has many positions, one canonical; rows have only one.
+**Canonical**: a tile position whose `x` lies inside its space's columns. In a
+wrapping space, every column has many positions, one canonical; rows have only
+one.
 
-**Terrain**: every tile of the world and what it holds: its fields, its biome
+**Terrain**: every tile of a space and what it holds: its fields, its biome
 and its obstacle.
 
 **Field**: a value that varies over the terrain and selects biomes: elevation,
