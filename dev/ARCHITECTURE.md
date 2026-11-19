@@ -149,8 +149,7 @@ pub struct World {
     inventories: Store<Inventory>,
     minds: Store<Mind>,
     // one store per capability, added when a mechanic needs it
-    terrain: Terrain,
-    spatial: SpatialIndex,
+    spaces: Spaces, // each space's terrain, spatial index and passages
 }
 ```
 
@@ -169,15 +168,59 @@ actors and objects (see [items](../docs/SIMULATION.md#representation)).
 
 ## World
 
-- **Positions in the simulation are whole tiles.** An entity moves to a
-  neighbouring tile over a number of ticks. Smooth motion exists only in
-  rendering.
-- Tiles are grouped into chunks. The world is finite and wraps east–west, so
-  every distance and heuristic is wrap-aware.
-- The world has obstacles. Obstacles and terrain block vision cones.
-- Navigation has two levels: a coarse graph of chunk regions and the portals
-  between them, plus exact local paths. The idea comes from Etendu, but it must
-  be redesigned for obstacles inside chunks and for the wrap seam.
+- **The world is made of spaces.** The surface is one. Building interiors,
+  dungeon floors and other worlds are others. Each space has its own terrain,
+  in chunks, and its own size. A space either wraps east–west, as the surface
+  does, or is bounded. Every distance and heuristic follows its space's shape.
+- **Positions in the simulation are whole tiles of a space.** A position names
+  its space. An entity moves to a neighbouring tile over a number of ticks.
+  Smooth motion exists only in rendering.
+- **Passages connect spaces.** A passage, such as a door or a cave mouth, joins
+  a tile of one space to a tile of another. Crossing it takes ticks but is not a
+  motion: rendering shows a transition instead of interpolating. Perception
+  never crosses a passage.
+- **Spaces appear and disappear at runtime**, for example when a building is
+  built or demolished, so space IDs are generational, like entity IDs. A space
+  may be generated when it is first needed. Its content then derives only from
+  the seed and the space's stable identity, never from when it was generated.
+- **Each space says whether the sky reaches it:** daylight, the seasonal look
+  and weather. The calendar is the same in every space.
+- Spaces have obstacles. Obstacles and terrain block vision cones.
+- Navigation has three levels: the graph of spaces and passages; within each
+  space, a coarse graph of chunk regions and the openings between them; and
+  exact local paths. Each space caches the distances between its passages and
+  refreshes them when its terrain changes. A route to another space costs the
+  distance to a passage, plus the cached distances, plus the distance from the
+  last passage. The same sum is the AI's cheap estimate of a cost. The region
+  graph comes from Etendu, but it must be redesigned for obstacles inside chunks
+  and for the wrap seam.
+
+## Level of detail
+
+Near the player character, the simulation runs every tick. Far from it, the same
+simulation runs every N ticks, staggered so that the load stays smooth. This is
+why [steps tolerate variable elapsed
+time](INVARIANTS.md#simulation-steps-tolerate-variable-elapsed-time). Near and
+far chunks hold the same kind of state, so a chunk changes detail at no cost.
+That matters because passages make such changes frequent.
+
+Distance is measured through passages. Within a space, it is the straight-line
+distance, wrap-aware where the space wraps. To another space, it is the distance
+to a passage, plus the cost of crossing it, plus the distance from its other
+end, over the shortest such route. A character inside a tavern is therefore
+near the square outside.
+
+Detail is computed per chunk, and an entity takes the detail of its chunk. When
+the player character enters another chunk:
+
+1. A shortest-path search over passages only gives each passage's distance from
+   the player character.
+2. Each chunk takes the smallest of its direct distance, if it is in the player
+   character's space, and each passage's distance plus the distance from that
+   passage.
+
+A chunk becomes near within a radius and becomes far again only beyond a larger
+one, so that walking along the boundary or through a door does not toggle it.
 
 ## Content
 
@@ -202,3 +245,5 @@ is whether `serde` earns its place.
   looping actors, and the command that reproduces each case.
 - In-game **inspection**: candidate goals and their values, goal chains, and
   knowledge. It serves debugging and the player alike.
+
+<!-- size-reviewed: 11838 -->

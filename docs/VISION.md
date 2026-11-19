@@ -68,16 +68,19 @@ That implies:
 | Topic | Decision |
 |---|---|
 | Player | One character. No household. |
-| Death | The player character can die. Game over or a new character: see [open questions](#open-questions). Mortality comes early in development. |
+| Death | The player character can die. The next character is a newcomer the player creates, who arrives in the same world, which goes on. Whether game over stays an option is an [open question](#open-questions). Mortality comes early in development. |
 | Generations | Aging, descendants and kids are not planned initially. If kids come later, think Fable II/III, not The Sims. |
-| World | Finite but large; exploration should be engaging. Wraps east–west (a cylinder), so climate can still follow latitude. |
+| Population | Renewed, so the world never empties. A dead actor leaves a vacancy, such as a village without its blacksmith, which a newcomer fills after a random delay: a situation for a while, ended at a time the player cannot predict. Animals are born. People arrive from outside the world: settlers to fill vacancies, and travellers who come with a purpose, stay a while and leave. Nothing arrives, is born or happens because the player is near. See [population](SIMULATION.md#population). |
+| World | The surface is finite but large; exploration should be engaging. It wraps east–west (a cylinder), so climate can still follow latitude. |
+| Spaces | Building interiors and dungeons are separate spaces, as in 2D Zelda games and Stardew Valley, not areas of the surface under a roof. Passages, such as doors, stairs and cave mouths, connect the spaces. The camera shows one space at a time, and vision never crosses a passage. All spaces share one clock and the same rules; each has its own size. |
+| Dungeons | Persistent. A monster killed stays dead and loot taken stays taken. A cleared dungeon fills up again only when actors move in, not by a reset. |
 | Terrain and perception | The world has obstacles. Vision is a cone whose range and width vary by species, is blocked by obstacles and terrain, and may shrink at night. |
 | Map | Fog of war: the map shows what the player character has discovered. |
 | Tone | The spirit and ambiance of Stardew Valley, not dark fantasy. A rougher setting (for example with crime in settlements) could be a separate game mode the player opts into, if ever implemented. |
 | Danger | Graded by place. Settlements and their surroundings, such as farmland, are relatively safe, and guards may help. The deep forest and other wilds expose the character more. Dungeons and hostile areas are dangerous. |
 | Time | A calendar with days and seasons. Seasons affect the world, such as farming and the look of plants and trees (the asset pack has seasonal variants). The pace is relatively slow, to suit the chill tone. The length of a day is configurable; its default is an [open question](#open-questions). |
 | Controls | Primarily mouse. Ordinary clicks give **orders**, even with the character selected. Holding a modifier key (such as Alt, or its Mac equivalent) switches to **direct control**, which the character follows without weighing it. Direct control is deliberately secondary. The camera pans with the screen edges and WASD (ZQSD on AZERTY, i.e. physical key positions). |
-| Off-screen | Full simulation near the player, coarser far away. The world must actually progress elsewhere, not just look as if it did. The approach is an [open question](#open-questions). |
+| Off-screen | Full simulation near the player character. Far away, the same simulation runs less often (throttling). The world must actually progress elsewhere, not just look as if it did. Distance is measured through passages, so the square outside a tavern is near a character inside it. Throttling still costs more as the population grows; a separate low-fidelity path is an experiment for later, if that cost calls for it. |
 | Combat | RimWorld-like: the character fights semi-autonomously, the player gives tactical orders, and the game can always be paused. |
 | Motivation | Sandbox, with aspirations as a likely bridge between watching and playing. The form is an [open question](#open-questions); it can start barebones. |
 | Economy | Very simple at first (buy, sell, a few prices). May grow if interesting. Never an economic simulation. |
@@ -135,14 +138,15 @@ Technical slices come before it. *(Proposed; to be refined.)*
 ## Open questions
 
 - **Aspirations:** what form do they take?
-- **Succession:** when the player character dies, is it game over or a new
-  character, and how is the new one chosen?
+- **Succession:** whether game over stays an option when the player character
+  dies, and, once descendants exist, whether the player can continue as one.
 - **Length of a day:** the default, given the slow pace we want. It is
   configurable in any case.
-- **Coarse simulation:** one option is the same simulation updated less often
-  far away (every N ticks, staggered so the load stays smooth). The other is a
-  separate low-fidelity path. The first is simpler, but its cost still grows
-  with the total population.
+- **Leaving:** whether villagers can leave the world through passages to the
+  outside, as travellers do.
+- **Other worlds:** whether the game has worlds besides the surface, reached
+  through passages such as portals. Spaces allow any number of them, of any
+  size, not aligned with the surface.
 
 ## Heritage
 

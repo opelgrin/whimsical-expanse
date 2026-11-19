@@ -1,7 +1,8 @@
 # Simulation
 
-The rules of the [world](VISION.md): items, their effects, bodies and actor
-knowledge. How actors *decide* is in [AI.md](AI.md).
+The rules of the [world](VISION.md): items, their effects, bodies, actor
+knowledge and how populations are renewed. How actors *decide* is in
+[AI.md](AI.md).
 
 Examples show what the engine must be able to support. They are not agreed
 content.
@@ -133,7 +134,7 @@ belief is corrected, and the actor decides again.
 |---|---|---|---|
 | Self | own body, meters, inventory, skills | actor state | never; not treated as knowledge |
 | Shared rules | item effects, known methods, dangers | per culture or species | no |
-| Map | discovered terrain and topology, coarse | per actor, compact | no, or very slowly (deferred) |
+| Map | discovered terrain and topology, passages included, coarse | per actor, compact | no, or very slowly (deferred) |
 | Things | what is where, always with when it was seen | per actor, bounded | yes, evicted |
 | People | known actors: relationships, learned traits, last known place and time | per actor, bounded but sticky | rarely; close relations never |
 | Memories | notable events | per actor, bounded | yes (later feature) |
@@ -145,6 +146,9 @@ belief is corrected, and the actor decides again.
 - **Every fact records when it was seen**, so actors can treat old information
   as less reliable.
 - **Absence is perceived:** seeing an empty bush updates the belief.
+- **Routes use known passages only.** An actor plans a route only through
+  passages it knows. Beyond them, reaching a place is exploration: an actor
+  that does not know a dungeon plans as far as its entrance.
 
 ### The player
 
@@ -160,3 +164,55 @@ belief is corrected, and the actor decides again.
 - **Communication** (an intended feature): facts told by others, such as
   gossip, rumours or news, as an effect of conversations. Facts record whether
   they were seen or told.
+
+## Population
+
+Actors die, so populations are renewed, or the world would slowly empty.
+Renewal answers vacancies, and never depends on where the player character is:
+the world lives the same way everywhere.
+
+### Vacancies
+
+- **A vacancy is room for one more actor:** a role left empty in an object (the
+  worker of a smithy), a free place in a house, or room in a habitat that its
+  food and territory can support. Content defines which objects have roles and
+  how a habitat's capacity derives from the world.
+- **A vacancy is filled after a delay**, within a range that content sets. The
+  delay, which actor comes and where it arrives derive from the seed and the
+  vacancy's identity. A village without its blacksmith therefore lives with
+  that for a while, and the player cannot predict for how long.
+- **An actor already in the world may fill it first**, if its drives value it:
+  a villager taking over the smithy, or the player character. Renewal then has
+  nothing to do.
+
+### Ways to renew
+
+| Way | How | Typical for |
+|---|---|---|
+| Birth | Adults of a species produce young, which grow over time, like a crop. | animals |
+| Arrival | A newcomer enters through a passage to the outside. | people; any species |
+| Source | An object produces actors over time, such as a graveyard. | monsters without a body |
+| Moving in | An actor already in the world moves to an empty place. | a cleared dungeon, an empty house |
+
+Content chooses the ways each species uses. Moving in redistributes the
+population without renewing it. Births are a general rule, not one for animals
+only: people could use it once descendants exist (see
+[generations](VISION.md#decisions-so-far)).
+
+### Arrivals
+
+- **Passages to the outside** lead off the world: a road off the north or south
+  edge, a harbour, the deepest stairs of a dungeon. The outside is never
+  simulated.
+- **Settlers** arrive to fill a vacancy, able to do what it needs, such as
+  smithing for a smithy. They stay.
+- **Travellers**, such as adventurers, explorers or a merchant caravan, arrive
+  with a purpose and act on it for a while: trying a dungeon, exploring,
+  trading. They need no vacancy. A drive values leaving through a passage to
+  the outside, more so the longer they stay and once their purpose is done. A
+  traveller can die, and can settle if it finds a vacancy it values.
+- **Travellers arrive at a rate set for the whole world**, through every
+  passage to the outside.
+- **Newcomers have no local knowledge.** The [genesis
+  exception](#rules-and-facts) does not apply to them: they explore, or they
+  are told. The player character is a newcomer too, so the map starts in fog.

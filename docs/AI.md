@@ -55,6 +55,7 @@ the actor wants it *now*.
 | Role or routine | A farmer's work drive values "field tended" in the morning; a guard values "intruders gone". |
 | Social | Reads relationships and proposes "chat with Y". A request from Y is valued by how much the actor likes Y. |
 | Aspiration | A long-term, low but steady drive: "own a sword", "befriend the blacksmith". |
+| Purpose | A traveller's wanderlust values leaving the world, more so the longer it stays and once its purpose is done. |
 | Obedience | Values the player's orders (player character only). |
 
 Physiological needs are *one way* to write a drive. They are not the model.
