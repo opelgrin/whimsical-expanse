@@ -15,8 +15,12 @@ what is built right now (see [STATUS.md](STATUS.md) and the code).
   first version of the game UI).
 - **Dependencies are minimal.** Use the standard library first. A crate earns its
   place by doing a large, hard-to-write job (windowing, GPU, UI). Small utilities
-  are written in-house, tailored to our needs: the RNG, the entity storage and
-  deterministic maps.
+  are written in-house, tailored to our needs: the RNG, the entity storage,
+  deterministic maps, and the noise of generation.
+- **libm** for sine, cosine and other functions that IEEE 754 does not round
+  exactly. It is pure Rust, so it gives the same result on every platform, as
+  [reproducibility](INVARIANTS.md#reproducibility) requires. Accurate and fast
+  versions are hard to write.
 - **bytemuck** for GPU data. It checks at compile time that a struct can be
   viewed as bytes, which hand-written `unsafe` cannot. The egui/wgpu stack
   already depends on it.
@@ -36,6 +40,7 @@ content, not in advance.
 crates/
   core/      IDs, coordinates (wrapping east–west), RNG streams, time
   terrain/   tiles in chunks, fields, biomes, obstacles, navigation
+  worldgen/  generation: a space's terrain from the seed and its parameters
   sim/       world state, mechanics, perception, knowledge, events, snapshots
   ai/        drives, selection, methods, activities
   content/   loading and validating content definitions

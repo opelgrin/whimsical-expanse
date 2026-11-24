@@ -16,12 +16,17 @@ between actors or threads. Randomness derives from the seed and a stable identit
 such as an actor and a period. The simulation and AI crates do not depend on
 windowing, rendering or audio.
 
-This is not a promise across binaries or platforms.
+The results are the same on every supported platform. Floating-point code that
+can influence an outcome uses only operations that IEEE 754 rounds exactly
+(`+`, `-`, `*`, `/`, `sqrt`, rounding to an integer) and takes other functions,
+such as sine and cosine, from `libm`. It never calls the standard library's
+versions, which use the platform's maths library and may differ in the last bit.
 
 **Rationale:** A failure that cannot be reproduced cannot be explained, and runs
 cannot be compared. Hidden variation breaks reproducibility silently: a run looks
 fine and differs only sometimes. A world that lives without a player must also
-run without a window.
+run without a window. A seed gives the same world to every player, and a failure
+seen on one platform can be reproduced on another.
 
 ## Compute, then commit
 

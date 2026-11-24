@@ -70,6 +70,38 @@ impl Grid {
         self.height
     }
 
+    /// The number of tiles.
+    #[must_use]
+    pub fn tile_count(self) -> usize {
+        to_usize(self.width) * to_usize(self.height)
+    }
+
+    /// The position of `tile` in row-major order, wrapping across the seam,
+    /// or `None` beyond the north and south edges. Indices run from 0 to
+    /// [`tile_count`](Self::tile_count), row by row from the north edge.
+    #[must_use]
+    pub fn index(self, tile: TilePos) -> Option<usize> {
+        let tile = self.canonical(tile)?;
+        Some(to_usize(tile.y) * to_usize(self.width) + to_usize(tile.x))
+    }
+
+    /// The canonical tile at row-major `index`, the inverse of
+    /// [`index`](Self::index).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is not below [`tile_count`](Self::tile_count).
+    #[must_use]
+    pub fn tile_at(self, index: usize) -> TilePos {
+        assert!(
+            index < self.tile_count(),
+            "tile index {index} is outside the grid"
+        );
+        let width = to_usize(self.width);
+        let narrow = |value: usize| i32::try_from(value).expect("grid coordinates fit in i32");
+        TilePos::new(narrow(index % width), narrow(index / width))
+    }
+
     /// The canonical form of `tile`, or `None` if it lies beyond the north or
     /// south edge.
     #[must_use]
@@ -126,6 +158,11 @@ impl Grid {
         let offset = self.offset(a, b);
         offset.dx.unsigned_abs() + offset.dy.unsigned_abs()
     }
+}
+
+/// Converts a coordinate or size already known to be non-negative.
+fn to_usize(value: i32) -> usize {
+    usize::try_from(value).expect("canonical coordinates and sizes are non-negative")
 }
 
 /// Converts a value already reduced to the grid's range back to a coordinate.
@@ -222,6 +259,19 @@ mod tests {
             grid.neighbour(TilePos::new(0, 1), Direction::West),
             Some(TilePos::new(4, 1))
         );
+    }
+
+    /// Catches row-major indices that skip or repeat tiles, swap rows and
+    /// columns, or do not wrap first.
+    #[test]
+    fn every_tile_has_one_index_and_back() {
+        let grid = grid(5, 3);
+        for index in 0..grid.tile_count() {
+            assert_eq!(grid.index(grid.tile_at(index)), Some(index));
+        }
+        assert_eq!(grid.index(TilePos::new(1, 2)), Some(11));
+        assert_eq!(grid.index(TilePos::new(-1, 0)), Some(4));
+        assert_eq!(grid.index(TilePos::new(0, 3)), None);
     }
 
     /// Catches neighbours that wrap north–south, or that leave the grid.

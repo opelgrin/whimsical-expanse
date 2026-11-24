@@ -90,10 +90,13 @@ mod tests {
         let plain = Tile::new(
             Fields {
                 elevation: 0,
-                temperature: 0,
+                winter_temperature: 0,
+                summer_temperature: 0,
                 moisture: 0,
+                vegetation: 0,
             },
             BiomeIndex(0),
+            false,
         );
         Terrain::new(1, 1, |_| plain).expect("a terrain with tiles")
     }

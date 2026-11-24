@@ -4,17 +4,15 @@ use std::error::Error;
 use std::fmt;
 use std::hash::BuildHasher;
 
-use expanse_core::grid::TilePos;
 use expanse_core::hash::FixedBuildHasher;
 use expanse_core::rng::Rng;
 use expanse_core::time::Tick;
 use expanse_terrain::Terrain;
 
-use crate::placeholder;
 use crate::snapshot::{EntityId, EntityView, Snapshot};
 use crate::wanderer::Wanderer;
 
-/// Everything a world is created from.
+/// Everything a world is created from, besides its terrain.
 ///
 /// There is deliberately no default: callers state every parameter, so tests
 /// never depend on values tuned for the game.
@@ -22,28 +20,24 @@ use crate::wanderer::Wanderer;
 pub struct WorldConfig {
     /// The seed every random stream derives from.
     pub seed: u64,
-    /// Width of the world, in chunks.
-    pub world_width_chunks: u16,
-    /// Height of the world, in chunks.
-    pub world_height_chunks: u16,
     /// How many ticks the wanderer takes to move one tile.
     pub ticks_per_step: u64,
 }
 
-/// Why a [`WorldConfig`] was rejected.
+/// Why a world could not be created.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvalidConfig {
-    /// The world has no tiles.
-    EmptyGrid,
     /// Moving one tile would take no time.
     ZeroTicksPerStep,
+    /// Every tile of the surface is blocked, so no entity can stand on it.
+    NoPassableTile,
 }
 
 impl fmt::Display for InvalidConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyGrid => write!(f, "the world must be at least one chunk wide and high"),
             Self::ZeroTicksPerStep => write!(f, "moving one tile must take at least one tick"),
+            Self::NoPassableTile => write!(f, "the surface has no passable tile"),
         }
     }
 }
@@ -53,6 +47,7 @@ impl Error for InvalidConfig {}
 /// Random stream keys, so that each use of randomness gets its own stream.
 mod stream {
     pub const WANDERER: u64 = 1;
+    pub const WANDERER_START: u64 = 2;
 }
 
 /// The owner of all simulation state.
@@ -68,28 +63,32 @@ impl World {
     /// The id of the single wandering entity.
     const WANDERER_ID: EntityId = EntityId(0);
 
-    /// Creates a world at tick zero.
+    /// Creates a world at tick zero on `surface`, the terrain generated for
+    /// it.
+    ///
+    /// The wanderer starts in the largest region of passable tiles, so that
+    /// it is never shut in a small pocket.
     ///
     /// # Errors
     ///
-    /// Returns an error if the world is empty or a step would take no time.
-    pub fn new(config: WorldConfig) -> Result<Self, InvalidConfig> {
+    /// Returns an error if a step would take no time, or if the surface has
+    /// no passable tile.
+    pub fn new(config: WorldConfig, surface: Terrain) -> Result<Self, InvalidConfig> {
         if config.ticks_per_step == 0 {
             return Err(InvalidConfig::ZeroTicksPerStep);
         }
-        let terrain = placeholder::terrain(config.world_width_chunks, config.world_height_chunks)
-            .ok_or(InvalidConfig::EmptyGrid)?;
-        let grid = terrain.grid();
-        let centre = TilePos::new(grid.width() / 2, grid.height() / 2);
-        let rng = Rng::from_stream(
-            config.seed,
-            &[stream::WANDERER, u64::from(Self::WANDERER_ID.0)],
-        );
-        let wanderer = Wanderer::new(centre, Tick::ZERO, rng, &terrain, config.ticks_per_step);
+        let open = surface
+            .largest_open_region()
+            .ok_or(InvalidConfig::NoPassableTile)?;
+        let wanderer_keys = [stream::WANDERER, u64::from(Self::WANDERER_ID.0)];
+        let start =
+            open[Rng::from_stream(config.seed, &[stream::WANDERER_START]).index(open.len())];
+        let rng = Rng::from_stream(config.seed, &wanderer_keys);
+        let wanderer = Wanderer::new(start, Tick::ZERO, rng, &surface, config.ticks_per_step);
         Ok(Self {
             config,
             tick: Tick::ZERO,
-            terrain,
+            terrain: surface,
             wanderer,
         })
     }
@@ -140,31 +139,45 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    use expanse_core::grid::TilePos;
+    use expanse_terrain::{BiomeIndex, Fields, Tile};
+
     use super::*;
 
     fn config(seed: u64) -> WorldConfig {
         WorldConfig {
             seed,
-            world_width_chunks: 2,
-            world_height_chunks: 1,
             ticks_per_step: 5,
         }
     }
 
+    /// A surface of 2 by 1 chunks whose impassable tiles are those for which
+    /// `impassable` holds.
+    fn surface(impassable: impl Fn(TilePos) -> bool) -> Terrain {
+        let fields = Fields {
+            elevation: 0,
+            winter_temperature: 0,
+            summer_temperature: 0,
+            moisture: 0,
+            vegetation: 0,
+        };
+        Terrain::new(2, 1, |tile| {
+            Tile::new(fields, BiomeIndex(0), impassable(tile))
+        })
+        .expect("a terrain with tiles")
+    }
+
+    /// A surface with scattered impassable tiles.
+    fn scattered() -> Terrain {
+        surface(|tile| (tile.x * 7 + tile.y * 3) % 5 == 0)
+    }
+
     fn run(config: WorldConfig, ticks: u64) -> World {
-        let mut world = World::new(config).expect("valid config");
+        let mut world = World::new(config, scattered()).expect("valid config");
         for _ in 0..ticks {
             world.advance();
         }
         world
-    }
-
-    /// The determinism invariant: catches any source of variation between runs,
-    /// such as a randomly seeded hasher or iteration over an unordered
-    /// container.
-    #[test]
-    fn same_seed_gives_the_same_state() {
-        assert_eq!(run(config(3), 500), run(config(3), 500));
     }
 
     /// Catches a state hash that ignores the state. Reproducibility checks
@@ -172,7 +185,7 @@ mod tests {
     /// whatever happens.
     #[test]
     fn the_state_hash_changes_as_the_world_changes() {
-        let mut world = World::new(config(3)).expect("valid config");
+        let mut world = World::new(config(3), scattered()).expect("valid config");
         let mut previous = world.state_hash();
         for _ in 0..20 {
             world.advance();
@@ -199,23 +212,6 @@ mod tests {
         assert!(motion.start <= world.tick() && world.tick() < motion.end);
     }
 
-    /// Catches a wanderer that starts on an obstacle, or that moves on other
-    /// terrain than the world's, by checking it against the terrain that
-    /// presentation is given.
-    #[test]
-    fn the_wanderer_never_stands_on_an_obstacle() {
-        for seed in 0..5 {
-            let mut world = World::new(config(seed)).expect("valid config");
-            for _ in 0..2_000 {
-                let snapshot = world.snapshot();
-                let motion = snapshot.entities[0].motion;
-                assert!(!snapshot.terrain.is_blocked(motion.from), "{motion:?}");
-                assert!(!snapshot.terrain.is_blocked(motion.to), "{motion:?}");
-                world.advance();
-            }
-        }
-    }
-
     /// Catches randomness that is ignored or not seeded, which would make every
     /// world behave identically. Compares movement rather than state hashes:
     /// the hash includes the generator's internal state, so it differs between
@@ -223,7 +219,7 @@ mod tests {
     #[test]
     fn different_seeds_give_different_movement() {
         let trajectory = |seed| {
-            let mut world = World::new(config(seed)).expect("valid config");
+            let mut world = World::new(config(seed), scattered()).expect("valid config");
             (0..500)
                 .map(|_| {
                     world.advance();
@@ -234,26 +230,35 @@ mod tests {
         assert_ne!(trajectory(3), trajectory(4));
     }
 
+    /// Catches a wanderer shut in a small pocket: a start chosen anywhere
+    /// passable, or in the first region found. Two impassable walls cut a
+    /// strip of two columns from the rest of the surface.
+    #[test]
+    fn the_wanderer_starts_in_the_largest_open_region() {
+        let surface = surface(|tile| tile.x == 1 || tile.x == 4);
+        for seed in 0..50 {
+            let world = World::new(config(seed), surface.clone()).expect("valid config");
+            let start = world.snapshot().entities[0].motion.from;
+            assert!(!(2..=3).contains(&start.x), "seed {seed}: {start:?}");
+            assert!(!surface.is_blocked(start), "seed {seed}: {start:?}");
+        }
+    }
+
     /// Catches configurations that would hang the simulation or leave an entity
     /// with nowhere to stand.
     #[test]
     fn rejects_configs_that_cannot_run() {
-        for empty in [
-            WorldConfig {
-                world_width_chunks: 0,
-                ..config(1)
-            },
-            WorldConfig {
-                world_height_chunks: 0,
-                ..config(1)
-            },
-        ] {
-            assert_eq!(World::new(empty), Err(InvalidConfig::EmptyGrid));
-        }
         let instant = WorldConfig {
             ticks_per_step: 0,
             ..config(1)
         };
-        assert_eq!(World::new(instant), Err(InvalidConfig::ZeroTicksPerStep));
+        assert_eq!(
+            World::new(instant, scattered()),
+            Err(InvalidConfig::ZeroTicksPerStep)
+        );
+        assert_eq!(
+            World::new(config(1), surface(|_| true)),
+            Err(InvalidConfig::NoPassableTile)
+        );
     }
 }

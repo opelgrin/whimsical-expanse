@@ -1,0 +1,17 @@
+[package]
+name = "expanse-worldgen"
+description = "World generation: builds a space's terrain from a seed and parameters."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+expanse-core = { path = "../core" }
+expanse-terrain = { path = "../terrain" }
+libm.workspace = true
+
+[lints]
+workspace = true

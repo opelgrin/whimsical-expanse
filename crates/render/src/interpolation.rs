@@ -118,8 +118,8 @@ fn lerp(from: WorldPoint, to: WorldPoint, fraction: f32, width: f32) -> WorldPoi
 
 #[cfg(test)]
 mod tests {
-    use expanse_sim::{EntityView, World, WorldConfig};
-    use expanse_terrain::Terrain;
+    use expanse_sim::EntityView;
+    use expanse_terrain::{BiomeIndex, Fields, Terrain, Tile};
 
     use super::*;
 
@@ -127,15 +127,15 @@ mod tests {
 
     /// The terrain of a small world. Only its width matters here.
     fn terrain() -> Terrain {
-        World::new(WorldConfig {
-            seed: 1,
-            world_width_chunks: 1,
-            world_height_chunks: 1,
-            ticks_per_step: 1,
-        })
-        .expect("valid world")
-        .snapshot()
-        .terrain
+        let fields = Fields {
+            elevation: 0,
+            winter_temperature: 0,
+            summer_temperature: 0,
+            moisture: 0,
+            vegetation: 0,
+        };
+        Terrain::new(1, 1, |_| Tile::new(fields, BiomeIndex(0), false))
+            .expect("a terrain with tiles")
     }
 
     fn motion(from: (i32, i32), to: (i32, i32), start: u64, end: u64) -> Motion {

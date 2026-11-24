@@ -64,5 +64,10 @@ Prefer a well-known crate that does the unsafe part with compile-time checks, as
   their contract.
 - **Tests sit next to the code** (`#[cfg(test)] mod tests`). Cross-crate
   scenarios go in a crate's `tests/` directory.
+- **Stand-ins say so.** Code written only to fill a gap until later work
+  replaces it opens its doc comment with `Stand-in:` and names what replaces
+  it, such as "Stand-in: replaced by the calendar types in M1 item 6." Searching
+  for `Stand-in:` then lists every such item, and the work that replaces one
+  deletes it.
 - **Describe roles, not content.** Code and comments in the engine never name
   particular content (see the [invariants](INVARIANTS.md)).

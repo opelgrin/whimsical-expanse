@@ -3,7 +3,6 @@
 //! It runs without a window and never reads the wall clock. Presentation only
 //! sees it through [`Snapshot`]s.
 
-mod placeholder;
 mod snapshot;
 mod wanderer;
 mod world;

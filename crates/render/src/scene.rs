@@ -72,11 +72,24 @@ pub(crate) fn build_instances(
 #[cfg(test)]
 mod tests {
     use expanse_core::{grid::TilePos, time::Tick};
-    use expanse_sim::{EntityId, EntityView, Motion, Snapshot, World, WorldConfig};
+    use expanse_sim::{EntityId, EntityView, Motion, Snapshot};
+    use expanse_terrain::{BiomeIndex, Fields, Terrain, Tile};
 
     use crate::camera::{CameraConfig, WorldPoint};
 
     use super::*;
+
+    fn terrain() -> Terrain {
+        let fields = Fields {
+            elevation: 0,
+            winter_temperature: 0,
+            summer_temperature: 0,
+            moisture: 0,
+            vegetation: 0,
+        };
+        Terrain::new(1, 1, |_| Tile::new(fields, BiomeIndex(0), false))
+            .expect("a terrain with tiles")
+    }
 
     /// Draws `snapshot` as if no time had passed since the previous tick.
     fn still(snapshot: &Snapshot) -> Interpolation<'_> {
@@ -90,13 +103,6 @@ mod tests {
     /// Catches old quads remaining in the reused buffer after an entity disappears.
     #[test]
     fn rebuilding_a_scene_discards_instances_from_the_previous_snapshot() {
-        let world = World::new(WorldConfig {
-            seed: 1,
-            world_width_chunks: 1,
-            world_height_chunks: 1,
-            ticks_per_step: 2,
-        })
-        .expect("valid world");
         let camera = Camera::new(
             CameraConfig {
                 initial_centre: WorldPoint::new(2.0, 1.5),
@@ -109,7 +115,20 @@ mod tests {
         )
         .expect("valid camera");
         let viewport = Viewport::new(40.0, 30.0);
-        let with_entity = world.snapshot();
+        let still_at = TilePos::new(2, 1);
+        let with_entity = Snapshot {
+            tick: Tick::ZERO,
+            terrain: terrain(),
+            entities: vec![EntityView {
+                id: EntityId(0),
+                motion: Motion {
+                    from: still_at,
+                    to: still_at,
+                    start: Tick::ZERO,
+                    end: Tick::new(2),
+                },
+            }],
+        };
         let mut without_entity = with_entity.clone();
         without_entity.entities.clear();
 
@@ -139,17 +158,10 @@ mod tests {
             8,
         )
         .expect("valid camera");
-        let world = World::new(WorldConfig {
-            seed: 1,
-            world_width_chunks: 1,
-            world_height_chunks: 1,
-            ticks_per_step: 2,
-        })
-        .expect("valid world");
         // A step east from tile 10 to tile 11, completed at the current tick.
         let at_tick = |tick| Snapshot {
             tick: Tick::new(tick),
-            terrain: world.snapshot().terrain,
+            terrain: terrain(),
             entities: vec![EntityView {
                 id: EntityId(0),
                 motion: Motion {

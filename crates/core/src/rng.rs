@@ -24,10 +24,7 @@ impl Rng {
     /// independent-looking sequences, even for neighbouring values.
     #[must_use]
     pub fn from_stream(seed: u64, keys: &[u64]) -> Self {
-        let mut mixed = split_mix(seed);
-        for &key in keys {
-            mixed = split_mix(mixed ^ key);
-        }
+        let mixed = stream_key(seed, keys);
         Self::seeded(mixed, split_mix(mixed))
     }
 
@@ -81,6 +78,33 @@ impl Rng {
             u32::try_from(len).expect("collections drawn from hold fewer than 2^32 elements");
         usize::try_from(self.below(bound)).expect("supported targets have 64-bit usize")
     }
+}
+
+/// 64 random bits identified by `seed` and `keys`, for when a single draw
+/// is needed and a whole generator would be wasted, such as one draw per
+/// tile.
+///
+/// The same seed and keys always give the same bits. Different keys give
+/// independent-looking bits, even for neighbouring values.
+#[must_use]
+pub fn stream_key(seed: u64, keys: &[u64]) -> u64 {
+    let mut mixed = split_mix(seed);
+    for &key in keys {
+        mixed = split_mix(mixed ^ key);
+    }
+    mixed
+}
+
+/// Turns 64 random bits into a number uniformly distributed in `0.0..1.0`,
+/// exactly on every platform.
+#[must_use]
+pub fn unit_interval(bits: u64) -> f64 {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "53 bits fill a double's mantissa exactly"
+    )]
+    let top = (bits >> 11) as f64;
+    top / 9_007_199_254_740_992.0
 }
 
 /// Keeps the low 32 bits. PCG's output function takes them by design.
@@ -146,6 +170,15 @@ mod tests {
         assert_ne!(reference, draws(&mut Rng::from_stream(7, &[0, 2]), 16));
         assert_ne!(reference, draws(&mut Rng::from_stream(7, &[1, 3]), 16));
         assert_ne!(reference, draws(&mut Rng::from_stream(7, &[2, 1]), 16));
+    }
+
+    /// Catches a draw that can reach 1, which would make a chance of 1 fail
+    /// sometimes, or that ignores the high bits. Values worked out by hand.
+    #[test]
+    fn unit_interval_covers_zero_to_just_below_one() {
+        assert_eq!(unit_interval(0), 0.0);
+        assert_eq!(unit_interval(1 << 63), 0.5);
+        assert_eq!(unit_interval(u64::MAX), 1.0 - 2.0_f64.powi(-53));
     }
 
     /// Catches off-by-one errors at either end of the range, and a range that
