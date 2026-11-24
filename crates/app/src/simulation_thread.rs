@@ -117,6 +117,10 @@ impl SimulationHandle {
             feed_changed: Condvar::new(),
         });
         let thread_slots = Arc::clone(&slots);
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the simulation thread lives as long as the world, unlike pool work"
+        )]
         let thread = thread::Builder::new()
             .name("simulation".into())
             .spawn(move || {

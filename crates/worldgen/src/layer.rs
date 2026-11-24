@@ -1,30 +1,7 @@
 //! Operations on a layer: one unquantised value per tile, in row-major order.
 
-use std::num::NonZero;
-use std::thread;
-
 use expanse_core::grid::Grid;
-
-/// Sets each value to `value_at` its index, spreading the work over the
-/// available threads.
-///
-/// Each value depends only on its index, so the result is the same as
-/// filling the values one by one, whatever the number of threads.
-pub(crate) fn fill_in_parallel(values: &mut [f64], value_at: impl Fn(usize) -> f64 + Sync) {
-    let threads = thread::available_parallelism().map_or(1, NonZero::get);
-    let part_length = values.len().div_ceil(threads).max(1);
-    thread::scope(|scope| {
-        for (part_number, part) in values.chunks_mut(part_length).enumerate() {
-            let value_at = &value_at;
-            scope.spawn(move || {
-                let first = part_number * part_length;
-                for (offset, value) in part.iter_mut().enumerate() {
-                    *value = value_at(first + offset);
-                }
-            });
-        }
-    });
-}
+use rayon::prelude::*;
 
 /// Replaces each value by the average over the square of `radius` tiles
 /// around it, wrapping across the seam. Near the north and south edges, the
@@ -39,37 +16,54 @@ pub(crate) fn smooth(grid: Grid, values: &mut [f64], radius: u16) {
     let height = to_usize(grid.height());
     let radius = usize::from(radius);
     debug_assert!(2 * radius < width);
-    let mut line = Vec::with_capacity(width.max(height));
 
     // Each row, wrapping: a running sum over the window of 2r + 1 columns.
     let window = f64::from(u32::try_from(2 * radius + 1).expect("a small radius"));
-    for row in values.chunks_exact_mut(width) {
-        line.clear();
-        line.extend_from_slice(row);
-        let mut sum: f64 = (0..=2 * radius)
-            .map(|offset| line[(offset + width - radius) % width])
-            .sum();
-        for (x, value) in row.iter_mut().enumerate() {
-            *value = sum / window;
-            sum += line[(x + radius + 1) % width] - line[(x + width - radius) % width];
-        }
-    }
+    values.par_chunks_exact_mut(width).for_each_init(
+        || Vec::with_capacity(width),
+        |line, row| {
+            line.clear();
+            line.extend_from_slice(row);
+            let mut sum: f64 = (0..=2 * radius)
+                .map(|offset| line[(offset + width - radius) % width])
+                .sum();
+            for (x, value) in row.iter_mut().enumerate() {
+                *value = sum / window;
+                sum += line[(x + radius + 1) % width] - line[(x + width - radius) % width];
+            }
+        },
+    );
 
     // Each column, cut off at the edges: sums of the values above each row.
-    for x in 0..width {
-        line.clear();
-        line.push(0.0);
-        for y in 0..height {
-            let total = line[y] + values[y * width + x];
-            line.push(total);
-        }
-        for y in 0..height {
-            let top = y.saturating_sub(radius);
-            let bottom = (y + radius + 1).min(height);
-            let count = f64::from(u32::try_from(bottom - top).expect("a small window"));
-            values[y * width + x] = (line[bottom] - line[top]) / count;
-        }
-    }
+    // The columns are computed apart, then written back row by row, since a
+    // column is not a contiguous part of `values`.
+    let columns: Vec<Vec<f64>> = (0..width)
+        .into_par_iter()
+        .map(|x| {
+            let mut above = Vec::with_capacity(height + 1);
+            above.push(0.0);
+            for y in 0..height {
+                let total = above[y] + values[y * width + x];
+                above.push(total);
+            }
+            (0..height)
+                .map(|y| {
+                    let top = y.saturating_sub(radius);
+                    let bottom = (y + radius + 1).min(height);
+                    let count = f64::from(u32::try_from(bottom - top).expect("a small window"));
+                    (above[bottom] - above[top]) / count
+                })
+                .collect()
+        })
+        .collect();
+    values
+        .par_chunks_exact_mut(width)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for (value, column) in row.iter_mut().zip(&columns) {
+                *value = column[y];
+            }
+        });
 }
 
 /// Sets `out` at each tile of `members` to its rank among them by `values`,
@@ -81,11 +75,13 @@ pub(crate) fn smooth(grid: Grid, values: &mut [f64], radius: u16) {
 pub(crate) fn rank(values: &[f64], members: &[usize], low: u32, span: u32, out: &mut [u16]) {
     // Sorting the values with their indices keeps the comparisons in cache.
     let mut ordered: Vec<(f64, usize)> = members
-        .iter()
+        .par_iter()
         .map(|&index| (values[index], index))
         .collect();
-    ordered.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    ordered.par_sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     let count = u64::try_from(members.len()).expect("fewer tiles than u64::MAX");
+    // Sequential: the members are scattered over `out`, so the writes cannot
+    // be split into separate parts of it. Each is cheap.
     for (rank, (_, index)) in ordered.into_iter().enumerate() {
         let rank = u64::try_from(rank).expect("fewer tiles than u64::MAX");
         let value = u64::from(low) + rank * u64::from(span) / count;
@@ -125,23 +121,6 @@ mod tests {
         ];
         for (index, (value, expected)) in values.iter().zip(expected).enumerate() {
             assert!((value - expected).abs() < 1e-12, "tile {index}: {value}");
-        }
-    }
-
-    /// Catches parts of the work written to the wrong place, skipped or
-    /// overlapping, which would make the result depend on the number of
-    /// threads.
-    #[test]
-    fn filling_in_parallel_matches_filling_one_by_one() {
-        for length in [0, 1, 7, 10_007] {
-            let mut values = vec![-1.0; length];
-            fill_in_parallel(&mut values, |index| {
-                f64::from(u32::try_from(index).expect("small")) * 0.5
-            });
-            let one_by_one: Vec<f64> = (0..length)
-                .map(|index| f64::from(u32::try_from(index).expect("small")) * 0.5)
-                .collect();
-            assert_eq!(values, one_by_one);
         }
     }
 

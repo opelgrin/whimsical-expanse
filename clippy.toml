@@ -11,4 +11,30 @@ disallowed-types = [
 disallowed-methods = [
     { path = "std::time::Instant::now", reason = "the simulation never reads the wall clock; only real-time pacing and presentation may, with an explicit expect" },
     { path = "std::time::SystemTime::now", reason = "the simulation never reads the wall clock; only real-time pacing and presentation may, with an explicit expect" },
+
+    # Parallel code: see dev/STYLE.md, "Parallel code".
+    { path = "std::thread::spawn", reason = "parallel work runs on the rayon pool" },
+    { path = "std::thread::scope", reason = "parallel work runs on the rayon pool" },
+    { path = "std::thread::Builder::spawn", reason = "parallel work runs on the rayon pool; only the simulation thread is started by hand" },
+    { path = "std::thread::Builder::spawn_scoped", reason = "parallel work runs on the rayon pool" },
+    { path = "rayon::spawn", reason = "detached work finishes in no defined order; use join or a parallel iterator" },
+    { path = "rayon::spawn_fifo", reason = "detached work finishes in no defined order; use join or a parallel iterator" },
+    { path = "rayon::ThreadPoolBuilder::build_global", reason = "only binaries size the global pool" },
+    # The grouping of a reduction depends on how the work is split. Allowed,
+    # with an expect, for an associative operation, such as an integer sum
+    # that cannot overflow. Floating-point sums are collected, then reduced
+    # sequentially.
+    { path = "rayon::iter::ParallelIterator::sum", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::product", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::reduce", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::reduce_with", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::try_reduce", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::try_reduce_with", reason = "its grouping depends on the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::fold", reason = "gives one result per part of the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::fold_with", reason = "gives one result per part of the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::try_fold", reason = "gives one result per part of the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::try_fold_with", reason = "gives one result per part of the split: only for an associative operation" },
+    { path = "rayon::iter::ParallelIterator::find_any", reason = "the result depends on which thread finishes first; use find_first" },
+    { path = "rayon::iter::ParallelIterator::find_map_any", reason = "the result depends on which thread finishes first; use find_map_first" },
+    { path = "rayon::iter::ParallelBridge::par_bridge", reason = "the order of the items depends on which thread takes them" },
 ]

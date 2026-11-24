@@ -18,7 +18,9 @@ covers the rest.
 - **Project rules in `clippy.toml`:**
   - the standard `HashMap`/`HashSet` are banned (see [collections](#collections));
   - reading the wall clock is banned, except for real-time pacing and
-    presentation.
+    presentation;
+  - starting threads by hand, and the parallel operations whose result can
+    depend on the thread count, are banned (see [parallel code](#parallel-code)).
 - **Toolchain:** pinned in `rust-toolchain.toml`, so local builds and CI use the
   same compiler.
 
@@ -46,6 +48,32 @@ the smallest item possible.
   Function signatures should make that visible.
 - **Expected failures are values, not panics.** An actor finding an empty chest
   is a normal outcome. Panics are for broken invariants only.
+
+## Parallel code
+
+Parallel work uses rayon (`use rayon::prelude::*`).
+The simulation thread is the only thread started by hand. Library crates run
+in whatever pool they are called from; only the binaries size the global pool.
+
+- **Parallel by default.** A pass over every tile, chunk or actor is written
+  parallel from the start. A pass that stays sequential says why in a comment:
+  it depends on order, or its work is too small to gain from it.
+- **Compute, then commit.** When a pass depends on order, compute what depends
+  only on each element in parallel, then apply the results sequentially, in a
+  defined order. The obstacle pass in `worldgen` is an example.
+- **The result never depends on the split.** `collect` and `unzip` keep the
+  order of the items, so they are always safe. A reduction (`sum`, `reduce`,
+  `fold`) is allowed only for an associative operation, such as integer
+  arithmetic that cannot overflow or that wraps, bitwise operations, or
+  `min`/`max` with a total order. It needs an `#[expect]` that says so.
+  Floating-point sums and products are not associative: collect the values,
+  then reduce them sequentially.
+- **The result never depends on which thread finishes first.** Use
+  `find_first`, not `find_any`. Do not use `par_bridge`. Do not write to shared
+  state from `for_each`, such as pushing to a list behind a lock or taking IDs
+  from a counter.
+- **Sorts have a total order.** Break ties with a stable key, such as the
+  row-major index, so that the sorted order depends only on the values.
 
 ## Unsafe
 

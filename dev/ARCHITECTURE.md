@@ -87,9 +87,12 @@ threads. Each tick:
 4. **Advance:** mechanics run and actions execute against the truth. Events are
    recorded.
 
-Parallel phases use a thread pool. The borrow checker expresses
-compute-then-commit directly: shared borrows while computing, an exclusive
-borrow while committing.
+Parallel phases run on rayon's global pool, called from the simulation
+thread, which waits for each phase to finish. The game binary sizes the pool
+one thread below the number of cores, so the window keeps a core while a phase
+runs. The borrow checker expresses compute-then-commit directly: shared
+borrows while computing, an exclusive borrow while committing. World
+generation runs on the same pool, before the first tick.
 
 **Player commands** are applied between ticks and recorded with their tick, so
 a run can be replayed.

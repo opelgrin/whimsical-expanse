@@ -3,10 +3,14 @@
 use expanse_core::grid::{Direction, Grid};
 use expanse_core::region::Regions;
 use expanse_terrain::{BiomeIndex, BiomeTable, Fields};
+use rayon::prelude::*;
 
 /// Each tile's biome: the first in the table whose ranges contain its fields.
 pub(crate) fn classify(fields: &[Fields], table: &BiomeTable) -> Vec<BiomeIndex> {
-    fields.iter().map(|fields| table.classify(fields)).collect()
+    fields
+        .par_iter()
+        .map(|fields| table.classify(fields))
+        .collect()
 }
 
 /// Gives each region smaller than `min_tiles` the biome most common along its
@@ -20,6 +24,10 @@ pub(crate) fn classify(fields: &[Fields], table: &BiomeTable) -> Vec<BiomeIndex>
 ///
 /// `min_tiles` is at most the number of tiles, so a small region never covers
 /// the whole grid and always has a border.
+///
+/// Sequential: whether a region changes depends on the changes before it in
+/// the round. Most of the time goes to finding the regions, which
+/// [`Regions::find`] does in row-major order.
 pub(crate) fn clean_up(
     grid: Grid,
     biomes: &mut [BiomeIndex],

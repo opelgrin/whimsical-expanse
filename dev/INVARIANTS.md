@@ -10,9 +10,9 @@ is built ([ARCHITECTURE.md](ARCHITECTURE.md)), what the game should be
 **Rule:** Given the same binary, content, configuration, seed and recorded inputs,
 the simulation produces the same results, tick for tick. Recorded inputs include
 player commands, each tagged with the tick it applied at. Nothing that varies
-between runs may influence an outcome: not the wall clock, not thread scheduling,
-not the order of an unordered container, and not a random generator shared
-between actors or threads. Randomness derives from the seed and a stable identity,
+between runs may influence an outcome: not the wall clock, not thread scheduling
+or the number of threads, not the order of an unordered container, and not a
+random generator shared between actors or threads. Randomness derives from the seed and a stable identity,
 such as an actor and a period. The simulation and AI crates do not depend on
 windowing, rendering or audio.
 

@@ -4,6 +4,7 @@
 //! to the terrain's scale. Unquantised values stay inside the generator.
 
 use expanse_terrain::{SEA_LEVEL, temperature_from_celsius};
+use rayon::prelude::*;
 
 use crate::layer::{rank, smooth};
 use crate::noise::Noise;
@@ -34,9 +35,9 @@ pub(crate) fn elevation(space: &Space, params: &FieldParams, water_share: f64) -
     smooth(grid, &mut noise, params.smoothing_radius);
 
     let count = grid.tile_count();
-    let mut order: Vec<(f64, usize)> = noise.iter().copied().zip(0..).collect();
-    order.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-    let order: Vec<usize> = order.into_iter().map(|(_, index)| index).collect();
+    let mut order: Vec<(f64, usize)> = noise.par_iter().copied().zip(0..count).collect();
+    order.par_sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    let order: Vec<usize> = order.into_par_iter().map(|(_, index)| index).collect();
     let water_count = share_of(count, water_share);
     let (water, land) = order.split_at(water_count);
 
@@ -48,6 +49,8 @@ pub(crate) fn elevation(space: &Space, params: &FieldParams, water_share: f64) -
     let mut land_height = vec![0.0; count];
     let highest_rank = land.len().saturating_sub(1).max(1);
     let highest_rank = f64::from(u32::try_from(highest_rank).expect("fewer than 2^32 tiles"));
+    // Sequential: the land tiles are scattered over the layer. Each write is
+    // cheap.
     for (rank, &index) in land.iter().enumerate() {
         land_height[index] =
             f64::from(u32::try_from(rank).expect("fewer than 2^32 tiles")) / highest_rank;
@@ -76,29 +79,36 @@ pub(crate) fn temperature(
 ) -> Temperatures {
     let grid = space.grid();
     let noise = Noise::new(space.stream(&[stream::TEMPERATURE]), params.noise).field(space);
-    let count = grid.tile_count();
-    let mut winter = Vec::with_capacity(count);
-    let mut summer = Vec::with_capacity(count);
-    for (index, &land_height) in elevation.land_height.iter().enumerate() {
-        let (sin, cos) = libm::sincos(space.latitude(index).degrees().to_radians());
-        let mean = params.pole_mean_celsius
-            + (params.equator_mean_celsius - params.pole_mean_celsius) * cos;
-        let swing = params.equator_swing_celsius
-            + (params.pole_swing_celsius - params.equator_swing_celsius) * sin.abs();
-        // Continentality, a factor on the swing, is 1 until a pass computes it
-        // from the distance to the sea.
-        let continentality = 1.0;
-        let half_swing = swing * continentality / 2.0;
-        let shift = noise[index] * params.noise_strength_celsius
-            - land_height * params.cooling_at_highest_celsius;
-        winter.push(mean - half_swing + shift);
-        summer.push(mean + half_swing + shift);
-    }
+    let (mut winter, mut summer): (Vec<f64>, Vec<f64>) = elevation
+        .land_height
+        .par_iter()
+        .enumerate()
+        .map(|(index, &land_height)| {
+            let (sin, cos) = libm::sincos(space.latitude(index).degrees().to_radians());
+            let mean = params.pole_mean_celsius
+                + (params.equator_mean_celsius - params.pole_mean_celsius) * cos;
+            let swing = params.equator_swing_celsius
+                + (params.pole_swing_celsius - params.equator_swing_celsius) * sin.abs();
+            // Continentality, a factor on the swing, is 1 until a pass
+            // computes it from the distance to the sea.
+            let continentality = 1.0;
+            let half_swing = swing * continentality / 2.0;
+            let shift = noise[index] * params.noise_strength_celsius
+                - land_height * params.cooling_at_highest_celsius;
+            (mean - half_swing + shift, mean + half_swing + shift)
+        })
+        .unzip();
     smooth(grid, &mut winter, params.smoothing_radius);
     smooth(grid, &mut summer, params.smoothing_radius);
     Temperatures {
-        winter: winter.into_iter().map(temperature_from_celsius).collect(),
-        summer: summer.into_iter().map(temperature_from_celsius).collect(),
+        winter: winter
+            .into_par_iter()
+            .map(temperature_from_celsius)
+            .collect(),
+        summer: summer
+            .into_par_iter()
+            .map(temperature_from_celsius)
+            .collect(),
     }
 }
 
@@ -113,8 +123,9 @@ pub(crate) fn ranked_on_land(
     let grid = space.grid();
     let mut noise = Noise::new(space.stream(&[label]), params.noise).field(space);
     smooth(grid, &mut noise, params.smoothing_radius);
-    let (water, land): (Vec<usize>, Vec<usize>) =
-        (0..grid.tile_count()).partition(|&index| elevation.is_water(index));
+    let (water, land): (Vec<usize>, Vec<usize>) = (0..grid.tile_count())
+        .into_par_iter()
+        .partition(|&index| elevation.is_water(index));
     let mut values = vec![0; grid.tile_count()];
     let full_range = 1 << 16;
     rank(&noise, &water, 0, full_range, &mut values);

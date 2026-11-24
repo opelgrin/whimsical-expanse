@@ -12,8 +12,8 @@
 use std::f64::consts::TAU;
 
 use expanse_core::rng::stream_key;
+use rayon::prelude::*;
 
-use crate::layer::fill_in_parallel;
 use crate::params::NoiseParams;
 use crate::space::Space;
 
@@ -64,9 +64,10 @@ impl Noise {
 
     /// The noise at every tile, in row-major order.
     pub(crate) fn field(&self, space: &Space) -> Vec<f64> {
-        let mut values = vec![0.0; space.grid().tile_count()];
-        fill_in_parallel(&mut values, |index| self.at(space, index));
-        values
+        (0..space.grid().tile_count())
+            .into_par_iter()
+            .map(|index| self.at(space, index))
+            .collect()
     }
 }
 

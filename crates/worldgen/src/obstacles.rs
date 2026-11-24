@@ -2,6 +2,7 @@
 
 use expanse_core::rng::{stream_key, unit_interval};
 use expanse_terrain::{BiomeIndex, BiomeTable, ObstacleIndex, Terrain};
+use rayon::prelude::*;
 
 use crate::noise::Noise;
 use crate::params::NoiseParams;
@@ -15,12 +16,41 @@ use crate::space::{Space, stream};
 /// obstacle is placed only if every tile of its footprint is free and has a
 /// biome that lists the kind. Otherwise it is skipped, so the density is an
 /// upper bound.
+///
+/// The draws and the biome checks depend only on the tile, so they are
+/// computed in parallel. Whether a footprint is free depends on the obstacles
+/// placed before it, so placing them is sequential, in row-major order.
 pub(crate) fn place(
     terrain: &mut Terrain,
     space: &Space,
     table: &BiomeTable,
     biomes: &[BiomeIndex],
 ) {
+    let grid = space.grid();
+    let candidates = candidates(space, table, biomes);
+    let mut placed_at = None;
+    for (index, kind) in candidates {
+        if placed_at == Some(index) {
+            continue;
+        }
+        let footprint = table.obstacle_kind(kind).footprint();
+        if terrain
+            .place_obstacle(grid.tile_at(index), kind, footprint)
+            .is_ok()
+        {
+            placed_at = Some(index);
+        }
+    }
+}
+
+/// The obstacles that may be placed, by row-major index of their anchor and
+/// in the order of the anchor's biome's list: those whose draw succeeds and
+/// whose footprint lies in biomes that list their kind.
+fn candidates(
+    space: &Space,
+    table: &BiomeTable,
+    biomes: &[BiomeIndex],
+) -> Vec<(usize, ObstacleIndex)> {
     let grid = space.grid();
     let draws = space.stream(&[stream::OBSTACLE]);
     let lists_kind = |biome: BiomeIndex, kind: ObstacleIndex| {
@@ -32,39 +62,44 @@ pub(crate) fn place(
     };
     let variations = variation_noises(space, table);
 
-    for (index, &biome) in biomes.iter().enumerate() {
-        let anchor = grid.tile_at(index);
-        for (position, obstacle) in table.biome(biome).obstacles().iter().enumerate() {
-            let variation = variations[usize::from(biome.0)][position]
-                .as_ref()
-                .map_or(0.0, |(noise, strength)| strength * noise.at(space, index));
-            let chance = obstacle.density * (1.0 + variation);
-            let draw = stream_key(
-                draws,
-                &[
-                    i64::from(anchor.x).cast_unsigned(),
-                    i64::from(anchor.y).cast_unsigned(),
-                    u64::from(obstacle.kind.0),
-                ],
-            );
-            if unit_interval(draw) >= chance {
-                continue;
-            }
-            let footprint = table.obstacle_kind(obstacle.kind).footprint();
-            let fits = footprint.offsets().all(|offset| {
-                grid.translate(anchor, offset)
-                    .and_then(|tile| grid.index(tile))
-                    .is_some_and(|tile| lists_kind(biomes[tile], obstacle.kind))
-            });
-            if fits
-                && terrain
-                    .place_obstacle(anchor, obstacle.kind, footprint)
-                    .is_ok()
-            {
-                break;
-            }
-        }
-    }
+    biomes
+        .par_iter()
+        .enumerate()
+        .flat_map_iter(|(index, &biome)| {
+            let anchor = grid.tile_at(index);
+            let variations = &variations[usize::from(biome.0)];
+            let lists_kind = &lists_kind;
+            table
+                .biome(biome)
+                .obstacles()
+                .iter()
+                .enumerate()
+                .filter(move |&(position, obstacle)| {
+                    let variation = variations[position]
+                        .as_ref()
+                        .map_or(0.0, |(noise, strength)| strength * noise.at(space, index));
+                    let chance = obstacle.density * (1.0 + variation);
+                    let draw = stream_key(
+                        draws,
+                        &[
+                            i64::from(anchor.x).cast_unsigned(),
+                            i64::from(anchor.y).cast_unsigned(),
+                            u64::from(obstacle.kind.0),
+                        ],
+                    );
+                    unit_interval(draw) < chance
+                })
+                .filter(move |(_, obstacle)| {
+                    let footprint = table.obstacle_kind(obstacle.kind).footprint();
+                    footprint.offsets().all(|offset| {
+                        grid.translate(anchor, offset)
+                            .and_then(|tile| grid.index(tile))
+                            .is_some_and(|tile| lists_kind(biomes[tile], obstacle.kind))
+                    })
+                })
+                .map(move |(_, obstacle)| (index, obstacle.kind))
+        })
+        .collect()
 }
 
 /// For each biome, and each of its obstacle kinds, the noise of its variation

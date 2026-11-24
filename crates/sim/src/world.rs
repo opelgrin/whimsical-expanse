@@ -153,7 +153,7 @@ mod tests {
 
     /// A surface of 2 by 1 chunks whose impassable tiles are those for which
     /// `impassable` holds.
-    fn surface(impassable: impl Fn(TilePos) -> bool) -> Terrain {
+    fn surface(impassable: impl Fn(TilePos) -> bool + Sync) -> Terrain {
         let fields = Fields {
             elevation: 0,
             winter_temperature: 0,
