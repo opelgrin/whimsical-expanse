@@ -20,7 +20,9 @@
 //! });
 //! ```
 
-use crate::grid::{Direction, Grid};
+use rayon::prelude::*;
+
+use crate::grid::Grid;
 
 /// The connected components of a grid, computed from per-tile keys.
 ///
@@ -48,8 +50,8 @@ const NO_REGION: u32 = u32::MAX;
 impl Regions {
     /// Computes the regions of `grid` from per-tile keys.
     ///
-    /// `key` is called once per tile (in row-major order). For each tile at
-    /// row-major `index`:
+    /// `key` is called once per tile, in parallel and in no particular order.
+    /// For each tile at row-major `index`:
     /// - `Some(k)` means the tile belongs to the region identified by key `k`.
     /// - `None` means the tile is excluded from all regions (e.g. void or
     ///   impassable).
@@ -61,50 +63,48 @@ impl Regions {
     /// # Panics
     ///
     /// Panics if the grid has `u32::MAX` tiles or more.
-    pub fn find<K: PartialEq>(grid: Grid, key: impl Fn(usize) -> Option<K>) -> Self {
+    pub fn find<K: PartialEq + Send + Sync>(
+        grid: Grid,
+        key: impl Fn(usize) -> Option<K> + Sync,
+    ) -> Self {
         let count = grid.tile_count();
         assert!(
             u32::try_from(count).is_ok_and(|count| count < NO_REGION),
             "grids hold fewer than u32::MAX tiles"
         );
-        let mut regions = Self {
-            region_of: vec![NO_REGION; count],
-            members: Vec::with_capacity(count),
-            starts: vec![0],
-        };
-        for first in 0..count {
-            if regions.region_of[first] != NO_REGION {
-                continue;
-            }
-            let Some(first_key) = key(first) else {
-                continue;
-            };
-            let region = to_u32(regions.starts.len() - 1);
-            regions.region_of[first] = region;
-            regions.members.push(to_u32(first));
-            // The members of this region double as the queue of tiles to visit.
-            let mut next = regions.starts[regions.starts.len() - 1];
-            while let Some(&tile) = regions.members.get(next) {
-                next += 1;
-                let tile = grid.tile_at(to_usize(tile));
-                for direction in Direction::ALL {
-                    let Some(neighbour) = grid
-                        .neighbour(tile, direction)
-                        .and_then(|neighbour| grid.index(neighbour))
-                    else {
-                        continue;
-                    };
-                    if regions.region_of[neighbour] == NO_REGION
-                        && key(neighbour).is_some_and(|other| other == first_key)
-                    {
-                        regions.region_of[neighbour] = region;
-                        regions.members.push(to_u32(neighbour));
-                    }
-                }
-            }
-            regions.starts.push(regions.members.len());
+        let width = usize::try_from(grid.width()).expect("grid sizes are positive");
+        let height = usize::try_from(grid.height()).expect("grid sizes are positive");
+
+        // The runs of each row: the region of a tile is the region of its run.
+        let rows: Vec<Vec<Run<K>>> = (0..height)
+            .into_par_iter()
+            .map(|y| runs_of_row(y * width, width, &key))
+            .collect();
+        let mut row_starts = Vec::with_capacity(height + 1);
+        row_starts.push(0);
+        for row in &rows {
+            row_starts.push(row_starts[row_starts.len() - 1] + row.len());
         }
-        regions
+        let runs: Vec<&Run<K>> = rows.iter().flatten().collect();
+        let region_of_run = number_runs(&runs, links(&rows, &row_starts, width));
+
+        let mut region_of = vec![NO_REGION; count];
+        region_of
+            .par_chunks_mut(width)
+            .zip(&rows)
+            .enumerate()
+            .for_each(|(y, (tiles, row))| {
+                let row_start = y * width;
+                for (run, region) in row.iter().zip(&region_of_run[row_starts[y]..]) {
+                    tiles[run.start - row_start..run.end - row_start].fill(*region);
+                }
+            });
+        let (members, starts) = members(&runs, &region_of_run);
+        Self {
+            region_of,
+            members,
+            starts,
+        }
     }
 
     /// The number of regions (connected components).
@@ -121,8 +121,7 @@ impl Regions {
         (region != NO_REGION).then(|| to_usize(region))
     }
 
-    /// The row-major indices of all tiles in `region`, in the order they were
-    /// discovered during region-finding.
+    /// The row-major indices of all tiles in `region`, in increasing order.
     pub fn tiles(&self, region: usize) -> impl ExactSizeIterator<Item = usize> + '_ {
         self.members[self.starts[region]..self.starts[region + 1]]
             .iter()
@@ -139,6 +138,182 @@ impl Regions {
     }
 }
 
+/// The pairs of runs, by number among all runs in row-major order, that are
+/// in the same region: across the seam, and down to the next row.
+/// `row_starts` holds the number of each row's first run.
+fn links<K: PartialEq + Sync>(
+    rows: &[Vec<Run<K>>],
+    row_starts: &[usize],
+    width: usize,
+) -> Vec<(usize, usize)> {
+    (0..rows.len())
+        .into_par_iter()
+        .flat_map_iter(|y| {
+            let first = row_starts[y];
+            let seam = seam_link(&rows[y], width).map(|(west, east)| (first + west, first + east));
+            let below = rows.get(y + 1).map_or_else(Vec::new, |next| {
+                downward_links(&rows[y], next, width)
+                    .into_iter()
+                    .map(|(above, below)| (first + above, row_starts[y + 1] + below))
+                    .collect()
+            });
+            seam.into_iter().chain(below)
+        })
+        .collect()
+}
+
+/// The region of each run, given the links between runs. Regions are
+/// numbered in the order of their first run.
+///
+/// Sequential: there are far fewer runs and links than tiles.
+fn number_runs<K>(runs: &[&Run<K>], links: Vec<(usize, usize)>) -> Vec<u32> {
+    let mut roots = Roots::new(runs.len());
+    for (a, b) in links {
+        roots.join(a, b);
+    }
+    let mut region_of_run = vec![NO_REGION; runs.len()];
+    let mut count = 0;
+    for run in 0..runs.len() {
+        // A root is the first run of its region, so it is numbered before
+        // the rest of the region.
+        let root = roots.root(run);
+        region_of_run[run] = if root == run {
+            count += 1;
+            count - 1
+        } else {
+            region_of_run[root]
+        };
+    }
+    region_of_run
+}
+
+/// The tiles of every region, region after region, and where each region's
+/// tiles start, followed by the total.
+///
+/// Sequential: the runs are scattered over the regions. Each write is cheap.
+fn members<K>(runs: &[&Run<K>], region_of_run: &[u32]) -> (Vec<u32>, Vec<usize>) {
+    let count = region_of_run
+        .iter()
+        .max()
+        .map_or(0, |&last| to_usize(last) + 1);
+    let mut starts = vec![0; count + 1];
+    for (run, &region) in runs.iter().zip(region_of_run) {
+        starts[to_usize(region) + 1] += run.end - run.start;
+    }
+    for region in 1..=count {
+        starts[region] += starts[region - 1];
+    }
+    let mut next = starts.clone();
+    let mut members = vec![0; starts[starts.len() - 1]];
+    for (run, &region) in runs.iter().zip(region_of_run) {
+        let next = &mut next[to_usize(region)];
+        for (slot, tile) in members[*next..].iter_mut().zip(run.start..run.end) {
+            *slot = to_u32(tile);
+        }
+        *next += run.end - run.start;
+    }
+    (members, starts)
+}
+
+/// Tiles of one row with the same key, side by side: row-major indices
+/// `start..end`. The seam does not split runs here; [`seam_link`] joins them.
+struct Run<K> {
+    start: usize,
+    end: usize,
+    key: K,
+}
+
+/// The runs of the row of `width` tiles that starts at `row_start`, from west
+/// to east. Tiles without a key belong to no run.
+fn runs_of_row<K: PartialEq>(
+    row_start: usize,
+    width: usize,
+    key: &impl Fn(usize) -> Option<K>,
+) -> Vec<Run<K>> {
+    let mut runs: Vec<Run<K>> = Vec::new();
+    for index in row_start..row_start + width {
+        let Some(tile_key) = key(index) else {
+            continue;
+        };
+        match runs.last_mut() {
+            Some(run) if run.end == index && run.key == tile_key => run.end += 1,
+            _ => runs.push(Run {
+                start: index,
+                end: index + 1,
+                key: tile_key,
+            }),
+        }
+    }
+    runs
+}
+
+/// The first and last runs of `row`, by position in it, if they meet across
+/// the seam with the same key.
+fn seam_link<K: PartialEq>(row: &[Run<K>], width: usize) -> Option<(usize, usize)> {
+    let (first, last) = (row.first()?, row.last()?);
+    let row_start = first.start - first.start % width;
+    let meet = row.len() > 1 && first.start == row_start && last.end == row_start + width;
+    (meet && first.key == last.key).then_some((0, row.len() - 1))
+}
+
+/// The pairs of runs, by position in `above` and in `below`, that share a
+/// column and a key.
+fn downward_links<K: PartialEq>(
+    above: &[Run<K>],
+    below: &[Run<K>],
+    width: usize,
+) -> Vec<(usize, usize)> {
+    let column = |index: usize| index % width;
+    let end_column = |run: &Run<K>| column(run.end - 1) + 1;
+    let mut links = Vec::new();
+    let (mut a, mut b) = (0, 0);
+    while a < above.len() && b < below.len() {
+        let (upper, lower) = (&above[a], &below[b]);
+        let overlap =
+            column(upper.start) < end_column(lower) && column(lower.start) < end_column(upper);
+        if overlap && upper.key == lower.key {
+            links.push((a, b));
+        }
+        // Move past the run that ends first; it overlaps nothing further.
+        match end_column(upper).cmp(&end_column(lower)) {
+            std::cmp::Ordering::Less => a += 1,
+            std::cmp::Ordering::Greater => b += 1,
+            std::cmp::Ordering::Equal => {
+                a += 1;
+                b += 1;
+            }
+        }
+    }
+    links
+}
+
+/// Union-find over runs, where the root of a set is its lowest run.
+struct Roots {
+    parent: Vec<usize>,
+}
+
+impl Roots {
+    fn new(count: usize) -> Self {
+        Self {
+            parent: (0..count).collect(),
+        }
+    }
+
+    /// The root of `run`'s set, halving the path on the way.
+    fn root(&mut self, mut run: usize) -> usize {
+        while self.parent[run] != run {
+            self.parent[run] = self.parent[self.parent[run]];
+            run = self.parent[run];
+        }
+        run
+    }
+
+    fn join(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.root(a), self.root(b));
+        self.parent[a.max(b)] = a.min(b);
+    }
+}
+
 fn to_u32(index: usize) -> u32 {
     u32::try_from(index).expect("the grid holds fewer than u32::MAX tiles")
 }
@@ -150,7 +325,8 @@ fn to_usize(index: u32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grid::TilePos;
+    use crate::grid::{Direction, TilePos};
+    use crate::rng::Rng;
 
     /// Regions of a grid drawn as text: one character per tile, `.` for a
     /// tile without a key.
@@ -198,6 +374,72 @@ mod tests {
         for region in 0..regions.count() {
             for tile in regions.tiles(region) {
                 assert_eq!(regions.region_of(tile), Some(region));
+            }
+        }
+    }
+
+    /// The regions by a plain flood fill from each tile in row-major order:
+    /// the region of each tile, numbered as `Regions` numbers them.
+    fn flood_fill(grid: Grid, keys: &[Option<u8>]) -> Vec<Option<usize>> {
+        let mut region_of = vec![None; keys.len()];
+        let mut count = 0;
+        for first in 0..keys.len() {
+            if region_of[first].is_some() || keys[first].is_none() {
+                continue;
+            }
+            region_of[first] = Some(count);
+            let mut stack = vec![first];
+            while let Some(index) = stack.pop() {
+                for direction in Direction::ALL {
+                    let Some(neighbour) = grid
+                        .neighbour(grid.tile_at(index), direction)
+                        .and_then(|tile| grid.index(tile))
+                    else {
+                        continue;
+                    };
+                    if region_of[neighbour].is_none() && keys[neighbour] == keys[first] {
+                        region_of[neighbour] = Some(count);
+                        stack.push(neighbour);
+                    }
+                }
+            }
+            count += 1;
+        }
+        region_of
+    }
+
+    /// Catches runs that are joined when they do not touch, or not joined
+    /// when they do: across the seam, between rows, at the north and south
+    /// edges, and on grids one or two tiles wide. Random keys over many
+    /// sizes, checked against a plain flood fill.
+    #[test]
+    fn regions_match_a_flood_fill_on_random_grids() {
+        for seed in 0..200 {
+            let mut rng = Rng::from_stream(seed, &[]);
+            let width = 1 + rng.index(9);
+            let height = 1 + rng.index(9);
+            let grid = Grid::new(
+                i32::try_from(width).expect("small"),
+                i32::try_from(height).expect("small"),
+            )
+            .expect("a grid with tiles");
+            let kinds = 1 + rng.below(3);
+            let keys: Vec<Option<u8>> = (0..grid.tile_count())
+                .map(|_| u8::try_from(rng.below(kinds + 1)).expect("small"))
+                .map(|key| (key > 0).then_some(key))
+                .collect();
+            let regions = Regions::find(grid, |index| keys[index]);
+            let expected = flood_fill(grid, &keys);
+            let found: Vec<Option<usize>> = (0..keys.len())
+                .map(|index| regions.region_of(index))
+                .collect();
+            assert_eq!(found, expected, "seed {seed}, {width} × {height}");
+            for region in 0..regions.count() {
+                let tiles: Vec<usize> = regions.tiles(region).collect();
+                let in_region: Vec<usize> = (0..keys.len())
+                    .filter(|&index| expected[index] == Some(region))
+                    .collect();
+                assert_eq!(tiles, in_region, "seed {seed}, region {region}");
             }
         }
     }

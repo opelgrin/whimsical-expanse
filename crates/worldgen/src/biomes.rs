@@ -26,8 +26,7 @@ pub(crate) fn classify(fields: &[Fields], table: &BiomeTable) -> Vec<BiomeIndex>
 /// the whole grid and always has a border.
 ///
 /// Sequential: whether a region changes depends on the changes before it in
-/// the round. Most of the time goes to finding the regions, which
-/// [`Regions::find`] does in row-major order.
+/// the round. Finding the regions, most of the work, is parallel.
 pub(crate) fn clean_up(
     grid: Grid,
     biomes: &mut [BiomeIndex],
