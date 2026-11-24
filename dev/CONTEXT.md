@@ -69,7 +69,7 @@ one.
 and its obstacle.
 
 **Field**: a value that varies over the terrain and selects biomes: elevation,
-temperature, moisture, vegetation.
+winter and summer temperature, moisture, vegetation.
 
 **Biome**: a kind of land, chosen for each tile from its fields by the biome
 table, which content supplies.
