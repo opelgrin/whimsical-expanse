@@ -8,12 +8,18 @@
 
 use std::process::ExitCode;
 
+use expanse_core::grid::TileOffset;
 use expanse_sim::{World, WorldConfig};
+use expanse_terrain::{
+    BiomeDefinition, BiomeObstacleDefinition, BiomeTable, FieldRanges, ObstacleKindDefinition,
+};
+use expanse_worldgen::{
+    FieldParams, NoiseParams, SurfaceParams, TemperatureParams, generate_surface,
+};
 
-/// World and movement parameters for headless runs. They only need to exercise
-/// the simulation; they are not game tuning.
-const WORLD_WIDTH_CHUNKS: u16 = 2;
-const WORLD_HEIGHT_CHUNKS: u16 = 2;
+/// Movement parameters for headless runs. Like the surface and the biome
+/// table below, they only need to exercise the simulation; they are not game
+/// tuning, and the surface is small so that generation stays fast.
 const TICKS_PER_STEP: u64 = 6;
 
 struct Options {
@@ -29,18 +35,108 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let surface = generate_surface(options.seed, &surface_params(), &biome_table())
+        .expect("the headless surface parameters are valid");
     let config = WorldConfig {
         seed: options.seed,
-        world_width_chunks: WORLD_WIDTH_CHUNKS,
-        world_height_chunks: WORLD_HEIGHT_CHUNKS,
         ticks_per_step: TICKS_PER_STEP,
     };
-    let mut world = World::new(config).expect("the headless parameters are valid");
+    let mut world = World::new(config, surface).expect("the headless surface has open land");
     for _ in 0..options.ticks {
         world.advance();
     }
     report_result(world.tick().count(), world.state_hash());
     ExitCode::SUCCESS
+}
+
+const fn surface_params() -> SurfaceParams {
+    let noise = NoiseParams {
+        scale_tiles: 24.0,
+        octaves: 4,
+        persistence: 0.5,
+    };
+    let field = FieldParams {
+        noise,
+        smoothing_radius: 1,
+    };
+    SurfaceParams {
+        width_chunks: 2,
+        height_chunks: 2,
+        north_latitude_degrees: 50.0,
+        south_latitude_degrees: 10.0,
+        water_share: 0.3,
+        elevation: field,
+        temperature: TemperatureParams {
+            equator_mean_celsius: 27.0,
+            pole_mean_celsius: -18.0,
+            equator_swing_celsius: 3.0,
+            pole_swing_celsius: 40.0,
+            cooling_at_highest_celsius: 20.0,
+            noise,
+            noise_strength_celsius: 3.0,
+            smoothing_radius: 2,
+        },
+        moisture: field,
+        vegetation: field,
+        min_region_tiles: 8,
+    }
+}
+
+/// Water, and land in a wooded and an open variant, with obstacles of one
+/// tile and of several.
+fn biome_table() -> BiomeTable {
+    let biome = |name: &str, ranges, impassable, obstacles: &[(&str, f64)]| BiomeDefinition {
+        name: name.to_owned(),
+        ranges,
+        map_colour: [0, 0, 0],
+        impassable,
+        obstacles: obstacles
+            .iter()
+            .map(|&(kind, density)| BiomeObstacleDefinition {
+                kind: kind.to_owned(),
+                density,
+                variation: None,
+            })
+            .collect(),
+    };
+    let kind = |name: &str, footprint: Vec<TileOffset>| ObstacleKindDefinition {
+        name: name.to_owned(),
+        footprint,
+    };
+    BiomeTable::new(
+        vec![
+            biome(
+                "water",
+                FieldRanges {
+                    elevation: Some(-1.0..0.0),
+                    ..FieldRanges::default()
+                },
+                true,
+                &[],
+            ),
+            biome(
+                "wooded",
+                FieldRanges {
+                    vegetation: Some(0.5..1.0),
+                    ..FieldRanges::default()
+                },
+                false,
+                &[("tree", 0.2), ("log", 0.02)],
+            ),
+            biome(
+                "open",
+                FieldRanges::default(),
+                false,
+                &[("rock", 0.02), ("log", 0.01)],
+            ),
+        ],
+        vec![
+            kind("tree", Vec::new()),
+            kind("rock", Vec::new()),
+            kind("log", vec![TileOffset::new(1, 0), TileOffset::new(2, 0)]),
+        ],
+    )
+    .expect("the headless biome table is valid")
 }
 
 fn parse(mut args: impl Iterator<Item = String>) -> Result<Options, String> {

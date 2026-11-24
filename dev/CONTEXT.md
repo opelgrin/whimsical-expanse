@@ -69,13 +69,40 @@ one.
 and its obstacle.
 
 **Field**: a value that varies over the terrain and selects biomes: elevation,
-temperature, moisture, vegetation.
+winter and summer temperature, moisture, vegetation.
 
 **Biome**: a kind of land, chosen for each tile from its fields by the biome
 table, which content supplies.
 
+**Biome table**: the biomes in priority order, each with a range for some
+fields. A tile takes the first biome whose ranges contain its fields.
+
+**Impassable**: of a biome, such as water, that blocks movement without an
+obstacle.
+
+**Region**: a set of tiles that share something, such as a biome, joined by
+their edges, across the seam too.
+
+**Sea level**: elevation 0. Tiles below it are water.
+
+**Winter and summer temperature**: a tile's coldest and warmest average of
+the year. Their mean is the **annual mean**, their difference the **swing**.
+
+**Latitude**: of a row of the surface, from the north and south edges'
+latitudes. It sets the climate and, south of the equator, shifts the seasons
+by half a year.
+
+**Generation**: building a space's terrain from the seed and the space's
+parameters, before the first tick, in **passes**: steps over the whole space
+that each write one layer, such as elevation or obstacles.
+
 **Obstacle**: something on the terrain that blocks movement, such as a rock or
 a tree. Part of the terrain, not an entity.
+
+**Obstacle kind**: the content definition of an obstacle: its name and
+footprint. A biome lists the kinds it places, each with a **density**, the
+chance that a tile anchors one, and an optional **variation**, smooth noise
+that groups them.
 
 **Footprint**: the tiles an obstacle blocks, given as offsets from its anchor.
 Unrelated to the size of its sprite.

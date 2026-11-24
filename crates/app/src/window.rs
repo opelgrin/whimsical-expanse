@@ -442,7 +442,7 @@ mod tests {
     use expanse_render::WorldPoint;
     use expanse_render::camera::VisibleTileRange;
     use expanse_sim::WorldConfig;
-    use expanse_terrain::CHUNK_SIZE;
+    use expanse_terrain::{BiomeIndex, CHUNK_SIZE, Fields, Terrain, Tile};
 
     use super::*;
 
@@ -471,13 +471,20 @@ mod tests {
     /// swapped dimensions. The camera also determines the grid drawn on screen.
     #[test]
     fn camera_uses_the_world_grid_for_panning_and_visible_tiles() {
-        let world = World::new(WorldConfig {
+        let fields = Fields {
+            elevation: 0,
+            winter_temperature: 0,
+            summer_temperature: 0,
+            moisture: 0,
+            vegetation: 0,
+        };
+        let surface = Terrain::new(2, 1, |_| Tile::new(fields, BiomeIndex(0), false))
+            .expect("a terrain with tiles");
+        let config = WorldConfig {
             seed: 1,
-            world_width_chunks: 2,
-            world_height_chunks: 1,
             ticks_per_step: 2,
-        })
-        .expect("valid world");
+        };
+        let world = World::new(config, surface).expect("valid world");
         let (width, height) = (2 * CHUNK_SIZE, CHUNK_SIZE);
         let mut camera = camera_for_world(
             &world,

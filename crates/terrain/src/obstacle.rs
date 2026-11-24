@@ -45,6 +45,12 @@ impl Footprint {
         Ok(Self { others: checked })
     }
 
+    /// The tiles of the footprint, as offsets from the anchor, the anchor
+    /// first.
+    pub fn offsets(&self) -> impl Iterator<Item = TileOffset> + '_ {
+        std::iter::once(TileOffset::new(0, 0)).chain(self.others.iter().map(|&(offset, _)| offset))
+    }
+
     /// The tiles other than the anchor: the offset from the anchor, and the
     /// way back.
     pub(crate) fn others(&self) -> &[(TileOffset, PartOffset)] {

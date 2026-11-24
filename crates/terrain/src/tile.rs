@@ -2,6 +2,8 @@
 
 use expanse_core::grid::TileOffset;
 
+use crate::field::Fields;
+
 /// One tile of terrain: its fields, its biome and the obstacle on it, if any.
 ///
 /// Obstacles are placed only through
@@ -11,16 +13,20 @@ use expanse_core::grid::TileOffset;
 pub struct Tile {
     pub fields: Fields,
     pub biome: BiomeIndex,
+    /// Whether the tile's biome blocks movement, as water does, so that code
+    /// reading the terrain never needs the biome table.
+    pub impassable: bool,
     obstacle: ObstacleCell,
 }
 
 impl Tile {
     /// A tile without an obstacle.
     #[must_use]
-    pub const fn new(fields: Fields, biome: BiomeIndex) -> Self {
+    pub const fn new(fields: Fields, biome: BiomeIndex, impassable: bool) -> Self {
         Self {
             fields,
             biome,
+            impassable,
             obstacle: ObstacleCell::Empty,
         }
     }
@@ -34,18 +40,6 @@ impl Tile {
     pub(crate) const fn set_obstacle(&mut self, obstacle: ObstacleCell) {
         self.obstacle = obstacle;
     }
-}
-
-/// The values from which a tile's biome is chosen.
-///
-/// Each is quantised to the whole `u16` range: 0 is the lowest value the
-/// generator produces and `u16::MAX` the highest. Integers keep the terrain
-/// small, exactly comparable and hashable, and make every value valid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Fields {
-    pub elevation: u16,
-    pub temperature: u16,
-    pub moisture: u16,
 }
 
 /// A biome, as its position in the biome table, which content supplies.

@@ -5,5 +5,6 @@
 
 pub mod grid;
 pub mod hash;
+pub mod region;
 pub mod rng;
 pub mod time;

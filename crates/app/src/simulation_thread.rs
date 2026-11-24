@@ -313,17 +313,25 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[cfg(test)]
 mod tests {
     use expanse_sim::WorldConfig;
+    use expanse_terrain::{BiomeIndex, Fields, Terrain, Tile};
 
     use super::*;
 
     fn world() -> World {
-        World::new(WorldConfig {
+        let fields = Fields {
+            elevation: 0,
+            winter_temperature: 0,
+            summer_temperature: 0,
+            moisture: 0,
+            vegetation: 0,
+        };
+        let surface = Terrain::new(1, 1, |_| Tile::new(fields, BiomeIndex(0), false))
+            .expect("a terrain with tiles");
+        let config = WorldConfig {
             seed: 11,
-            world_width_chunks: 1,
-            world_height_chunks: 1,
             ticks_per_step: 3,
-        })
-        .expect("valid config")
+        };
+        World::new(config, surface).expect("valid config")
     }
 
     /// Catches a thread that advances the world differently from running it

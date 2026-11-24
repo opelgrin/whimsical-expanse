@@ -611,8 +611,11 @@ name = "expanse-game"
 version = "0.1.0"
 dependencies = [
  "expanse-app",
+ "expanse-core",
  "expanse-render",
  "expanse-sim",
+ "expanse-terrain",
+ "expanse-worldgen",
 ]
 
 [[package]]
@@ -621,6 +624,8 @@ version = "0.1.0"
 dependencies = [
  "expanse-core",
  "expanse-sim",
+ "expanse-terrain",
+ "expanse-worldgen",
 ]
 
 [[package]]
@@ -643,6 +648,7 @@ version = "0.1.0"
 dependencies = [
  "expanse-core",
  "expanse-terrain",
+ "expanse-worldgen",
 ]
 
 [[package]]
@@ -650,6 +656,16 @@ name = "expanse-terrain"
 version = "0.1.0"
 dependencies = [
  "expanse-core",
+ "libm",
+]
+
+[[package]]
+name = "expanse-worldgen"
+version = "0.1.0"
+dependencies = [
+ "expanse-core",
+ "expanse-terrain",
+ "libm",
 ]
 
 [[package]]

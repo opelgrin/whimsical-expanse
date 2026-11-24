@@ -1,7 +1,10 @@
 //! Entry point for the playable game window.
 //!
-//! Default configuration and tuning live here so that library crates (`sim`,
-//! `render`, `app`) stay free of game defaults.
+//! Default configuration, tuning and content live here so that library crates
+//! (`sim`, `worldgen`, `render`, `app`) stay free of game defaults.
+
+mod content;
+mod generation;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -10,14 +13,14 @@ use expanse_app::camera_controls::CameraControlsConfig;
 use expanse_app::input::{Bindings, Button, InputAction, InputConfig, KeyCode, MouseButton};
 use expanse_app::pacer::{Speed, TickPacer};
 use expanse_app::window::{self, AppConfig};
+use expanse_core::grid::TilePos;
 use expanse_render::{CameraConfig, WorldPoint};
 use expanse_sim::{World, WorldConfig};
+use expanse_worldgen::generate_surface;
 
-// Simulation defaults. The world size is a placeholder until generation
-// arrives and its cost can be measured.
+// Simulation defaults. The surface's size and generation parameters are in
+// `generation`.
 const DEFAULT_SEED: u64 = 1;
-const WORLD_WIDTH_CHUNKS: u16 = 2;
-const WORLD_HEIGHT_CHUNKS: u16 = 1;
 const TICKS_PER_STEP: u64 = 10;
 const BASE_TICKS_PER_SECOND: u32 = 20;
 const MAX_SIMULATION_LAG: Duration = Duration::from_millis(250);
@@ -44,22 +47,33 @@ fn main() -> ExitCode {
         }
     };
 
-    let world = World::new(WorldConfig {
+    let surface = generate_surface(seed, &generation::surface_params(), &content::biome_table())
+        .expect("the default surface parameters are valid");
+    let config = WorldConfig {
         seed,
-        world_width_chunks: WORLD_WIDTH_CHUNKS,
-        world_height_chunks: WORLD_HEIGHT_CHUNKS,
         ticks_per_step: TICKS_PER_STEP,
-    })
-    .expect("the default game world parameters are valid");
+    };
+    let world = match World::new(config, surface) {
+        Ok(world) => world,
+        Err(err) => {
+            report_error(&err.to_string());
+            return ExitCode::FAILURE;
+        }
+    };
 
     let pacer = TickPacer::new(BASE_TICKS_PER_SECOND, MAX_SIMULATION_LAG);
 
-    let (width, height) = world.dimensions();
+    // The view opens on the wanderer, wherever the surface let it start.
+    let start = world
+        .snapshot()
+        .entities
+        .first()
+        .map_or(TilePos::new(0, 0), |entity| entity.motion.from);
     #[expect(
         clippy::cast_precision_loss,
-        reason = "default world dimensions fit accurately in f32"
+        reason = "tile coordinates of the default surface fit accurately in f32"
     )]
-    let initial_centre = WorldPoint::new(width as f32 * 0.5, height as f32 * 0.5);
+    let initial_centre = WorldPoint::new(start.x as f32 + 0.5, start.y as f32 + 0.5);
 
     let app_config = AppConfig {
         title: WINDOW_TITLE.to_owned(),

@@ -12,5 +12,8 @@ publish.workspace = true
 expanse-core = { path = "../core" }
 expanse-terrain = { path = "../terrain" }
 
+[dev-dependencies]
+expanse-worldgen = { path = "../worldgen" }
+
 [lints]
 workspace = true

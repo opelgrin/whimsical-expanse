@@ -10,8 +10,11 @@ publish.workspace = true
 
 [dependencies]
 expanse-app = { path = "../app" }
+expanse-core = { path = "../core" }
 expanse-render = { path = "../render" }
 expanse-sim = { path = "../sim" }
+expanse-terrain = { path = "../terrain" }
+expanse-worldgen = { path = "../worldgen" }
 
 [lints]
 workspace = true

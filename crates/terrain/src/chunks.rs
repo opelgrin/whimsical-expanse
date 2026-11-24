@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use expanse_core::grid::{Grid, TilePos};
+use expanse_core::region::Regions;
 
+use crate::climate::Latitude;
 use crate::obstacle::{Footprint, PlacementError};
 use crate::tile::{ObstacleCell, ObstacleIndex, Tile};
 
@@ -43,7 +45,8 @@ struct Chunk {
     tiles: Box<[Tile]>,
 }
 
-/// The terrain of the whole world: every tile, in chunks.
+/// The terrain of a space: every tile, in chunks, and the latitude of each
+/// row if the space has one.
 ///
 /// Each chunk sits behind a shared pointer, and so does the list of chunks.
 /// Cloning the terrain therefore copies two pointers, whatever its size, and
@@ -55,6 +58,8 @@ pub struct Terrain {
     world_width_chunks: i32,
     /// Row by row.
     chunks: Arc<Vec<Arc<Chunk>>>,
+    /// The latitude of each row, from the north edge, if the space has one.
+    row_latitudes: Option<Arc<[Latitude]>>,
 }
 
 impl Terrain {
@@ -90,7 +95,33 @@ impl Terrain {
             grid,
             world_width_chunks,
             chunks: Arc::new(chunks),
+            row_latitudes: None,
         })
+    }
+
+    /// The same terrain, with `latitudes` as the latitude of each row, from
+    /// the north edge.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless there is one latitude per row.
+    #[must_use]
+    pub fn with_row_latitudes(mut self, latitudes: Vec<Latitude>) -> Self {
+        assert_eq!(
+            latitudes.len(),
+            usize::try_from(self.grid.height()).expect("a positive height"),
+            "one latitude per row"
+        );
+        self.row_latitudes = Some(latitudes.into());
+        self
+    }
+
+    /// The latitude of row `y`, or `None` if the space has no latitude or the
+    /// row lies beyond the north or south edge.
+    #[must_use]
+    pub fn row_latitude(&self, y: i32) -> Option<Latitude> {
+        let latitudes = self.row_latitudes.as_ref()?;
+        latitudes.get(usize::try_from(y).ok()?).copied()
     }
 
     /// The shape of the grid the terrain covers.
@@ -114,12 +145,33 @@ impl Terrain {
         self.grid.canonical(tile).map(ChunkPos::of)
     }
 
-    /// Whether an obstacle blocks `tile`. Tiles beyond the north and south
-    /// edges count as blocked.
+    /// Whether movement onto `tile` is blocked, by an obstacle or by an
+    /// impassable biome. Tiles beyond the north and south edges count as
+    /// blocked.
     #[must_use]
     pub fn is_blocked(&self, tile: TilePos) -> bool {
         self.tile(tile)
-            .is_none_or(|tile| tile.obstacle() != ObstacleCell::Empty)
+            .is_none_or(|tile| tile.impassable || tile.obstacle() != ObstacleCell::Empty)
+    }
+
+    /// The tiles of the largest region of unblocked tiles, joined by their
+    /// edges and across the seam, or `None` if every tile is blocked. On a
+    /// tie, the region whose first tile comes first in row-major order.
+    ///
+    /// An entity placed there is never shut in a small pocket.
+    #[must_use]
+    pub fn largest_open_region(&self) -> Option<Vec<TilePos>> {
+        let grid = self.grid;
+        let regions = Regions::find(grid, |index| {
+            (!self.is_blocked(grid.tile_at(index))).then_some(())
+        });
+        let largest = regions.largest()?;
+        Some(
+            regions
+                .tiles(largest)
+                .map(|index| grid.tile_at(index))
+                .collect(),
+        )
     }
 
     /// Places `obstacle` with its anchor at `anchor` and its `footprint`
@@ -128,7 +180,8 @@ impl Terrain {
     /// # Errors
     ///
     /// Returns an error, and changes nothing, if part of the footprint lies
-    /// beyond the north or south edge, or on a tile that is already taken.
+    /// beyond the north or south edge, or on a tile that already holds an
+    /// obstacle. An impassable tile can hold one.
     pub fn place_obstacle(
         &mut self,
         anchor: TilePos,
@@ -149,7 +202,10 @@ impl Terrain {
         }
         for (index, &(tile, _)) in cells.iter().enumerate() {
             let repeated = cells[..index].iter().any(|&(earlier, _)| earlier == tile);
-            if repeated || self.is_blocked(tile) {
+            let taken = self
+                .tile(tile)
+                .is_some_and(|tile| tile.obstacle() != ObstacleCell::Empty);
+            if repeated || taken {
                 return Err(PlacementError::Blocked(tile));
             }
         }
@@ -190,17 +246,21 @@ mod tests {
     use expanse_core::grid::TileOffset;
 
     use super::*;
-    use crate::tile::{BiomeIndex, Fields};
+    use crate::field::Fields;
+    use crate::tile::BiomeIndex;
 
     /// A tile that records the position it was filled for.
     fn marked(tile: TilePos) -> Tile {
         Tile::new(
             Fields {
                 elevation: u16::try_from(tile.x).expect("test worlds are small"),
-                temperature: u16::try_from(tile.y).expect("test worlds are small"),
+                winter_temperature: u16::try_from(tile.y).expect("test worlds are small"),
+                summer_temperature: 0,
                 moisture: 0,
+                vegetation: 0,
             },
             BiomeIndex(0),
+            false,
         )
     }
 
@@ -306,6 +366,25 @@ mod tests {
             Err(PlacementError::Blocked(TilePos::new(12, 4)))
         );
         assert_eq!(terrain, before);
+    }
+
+    /// Catches an impassable biome that does not block movement, or that
+    /// keeps an obstacle off its tile, which would make placement depend on
+    /// more than footprints.
+    #[test]
+    fn an_impassable_tile_is_blocked_and_can_still_hold_an_obstacle() {
+        let water = TilePos::new(3, 3);
+        let mut terrain = Terrain::new(1, 1, |tile| {
+            let mut marked = marked(tile);
+            marked.impassable = tile == water;
+            marked
+        })
+        .expect("a terrain with tiles");
+        assert!(terrain.is_blocked(water));
+        assert!(!terrain.is_blocked(TilePos::new(3, 4)));
+        terrain
+            .place_obstacle(water, ObstacleIndex(0), &Footprint::single_tile())
+            .expect("an impassable tile without an obstacle is free");
     }
 
     /// Catches copies that grow with the terrain, and changes that reach a
