@@ -3,7 +3,7 @@
 
 use expanse_core::grid::Grid;
 use expanse_core::rng::stream_key;
-use expanse_terrain::{CHUNK_SIZE, Latitude};
+use expanse_terrain::{Latitude, Terrain};
 
 use crate::noise::circle_point;
 use crate::params::SurfaceParams;
@@ -23,11 +23,8 @@ impl Space {
     /// The surface described by `params`, which have been checked, in the
     /// game whose seed is `seed`.
     pub(crate) fn surface(seed: u64, params: &SurfaceParams) -> Self {
-        let grid = Grid::new(
-            i32::from(params.width_chunks) * CHUNK_SIZE,
-            i32::from(params.height_chunks) * CHUNK_SIZE,
-        )
-        .expect("checked parameters give a grid with tiles");
+        let grid = Terrain::grid_for(params.width_chunks, params.height_chunks)
+            .expect("checked parameters give a grid with tiles");
         let height = f64::from(grid.height());
         let north = params.north_latitude_degrees;
         let south = params.south_latitude_degrees;
