@@ -172,6 +172,23 @@ fn the_same_seed_and_parameters_give_the_same_terrain() {
     assert_ne!(generate(1, &params), generate(2, &params));
 }
 
+/// Catches parallel work whose result depends on how it is split, such as a
+/// floating-point sum, or on which thread finishes first.
+#[test]
+fn the_number_of_threads_does_not_change_the_terrain() {
+    let params = params();
+    let generate_on = |threads: usize, seed: u64| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("a thread pool")
+            .install(|| generate(seed, &params))
+    };
+    for seed in SEEDS {
+        assert_eq!(generate_on(1, seed), generate_on(7, seed), "seed {seed}");
+    }
+}
+
 /// Catches ranks that are not spread evenly over their range, water and
 /// land ranked together, and a share under water other than the
 /// parameter's. Spread evenly, the share of tiles below a value is that

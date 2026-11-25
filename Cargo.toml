@@ -20,6 +20,8 @@ egui-winit = { version = "0.37", default-features = false, features = ["wayland"
 # platform; the standard library's call the platform's maths library.
 libm = "0.2.16"
 pollster = "1.0"
+# The only way to run work in parallel; see dev/STYLE.md, "Parallel code".
+rayon = "1.12"
 wgpu = { version = "30.0", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }
 winit = "0.30"
 

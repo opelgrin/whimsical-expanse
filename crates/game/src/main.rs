@@ -6,6 +6,7 @@
 mod content;
 mod generation;
 
+use std::num::NonZero;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -47,6 +48,7 @@ fn main() -> ExitCode {
         }
     };
 
+    configure_thread_pool();
     let surface = generate_surface(seed, &generation::surface_params(), &content::biome_table())
         .expect("the default surface parameters are valid");
     let config = WorldConfig {
@@ -102,6 +104,20 @@ fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Sizes the pool that runs parallel work, leaving one core to the window, so
+/// that drawing stays smooth while the simulation runs a parallel phase.
+fn configure_thread_pool() {
+    let cores = std::thread::available_parallelism().map_or(1, NonZero::get);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the game binary is where the pool is sized"
+    )]
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(cores.saturating_sub(1).max(1))
+        .build_global()
+        .expect("the thread pool is configured once, before any parallel work");
 }
 
 /// Physical key positions, so `WASD` is `ZQSD` on AZERTY, plus the arrow keys.

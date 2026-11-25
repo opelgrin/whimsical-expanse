@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use expanse_core::grid::{Grid, TilePos};
 use expanse_core::region::Regions;
+use rayon::prelude::*;
 
 use crate::climate::Latitude;
 use crate::obstacle::{Footprint, PlacementError};
@@ -66,13 +67,13 @@ impl Terrain {
     /// A terrain of `world_width_chunks` by `world_height_chunks` chunks, or `None` if it
     /// would have no tiles.
     ///
-    /// `fill` gives each tile, called once for every canonical position. Tiles
-    /// start without obstacles; [`place_obstacle`](Self::place_obstacle) adds
-    /// them.
+    /// `fill` gives each tile, called once for every canonical position, in
+    /// parallel and in no particular order. Tiles start without obstacles;
+    /// [`place_obstacle`](Self::place_obstacle) adds them.
     pub fn new(
         world_width_chunks: u16,
         world_height_chunks: u16,
-        mut fill: impl FnMut(TilePos) -> Tile,
+        fill: impl Fn(TilePos) -> Tile + Sync,
     ) -> Option<Self> {
         let world_width_chunks = i32::from(world_width_chunks);
         let world_height_chunks = i32::from(world_height_chunks);
@@ -81,7 +82,8 @@ impl Terrain {
             world_height_chunks * CHUNK_SIZE,
         )?;
         let chunks = (0..world_height_chunks)
-            .flat_map(|y| (0..world_width_chunks).map(move |x| ChunkPos { x, y }))
+            .into_par_iter()
+            .flat_map_iter(|y| (0..world_width_chunks).map(move |x| ChunkPos { x, y }))
             .map(|chunk| {
                 let origin = chunk.origin();
                 let tiles = (0..CHUNK_SIZE)

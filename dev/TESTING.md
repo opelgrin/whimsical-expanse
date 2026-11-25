@@ -35,7 +35,9 @@ test at the right level: it has already happened once.
 Many important guarantees are properties, and properties survive tuning and
 refactoring:
 
-- determinism: two runs from the same seed are equal;
+- determinism: two runs from the same seed are equal, and so are runs on a
+  pool of one thread and on a pool of several (see the surface tests in
+  `worldgen`);
 - conservation: items are not created from nothing;
 - knowledge: an actor never believes a fact it did not perceive, was not told and
   did not receive at genesis;

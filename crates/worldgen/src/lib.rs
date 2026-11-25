@@ -26,6 +26,7 @@ mod params;
 mod space;
 
 use expanse_terrain::{BiomeTable, Fields, Terrain, Tile};
+use rayon::prelude::*;
 
 pub use params::{FieldParams, InvalidParams, NoiseParams, SurfaceParams, TemperatureParams};
 
@@ -55,11 +56,25 @@ fn generate_checked_surface(seed: u64, params: &SurfaceParams, table: &BiomeTabl
     let grid = space.grid();
 
     let elevation = fields::elevation(&space, &params.elevation, params.water_share);
-    let temperatures = fields::temperature(&space, &params.temperature, &elevation);
-    let moisture = fields::ranked_on_land(&space, &params.moisture, stream::MOISTURE, &elevation);
-    let vegetation =
-        fields::ranked_on_land(&space, &params.vegetation, stream::VEGETATION, &elevation);
+    // The other fields depend only on elevation, so they run together.
+    let (temperatures, (moisture, vegetation)) = rayon::join(
+        || fields::temperature(&space, &params.temperature, &elevation),
+        || {
+            rayon::join(
+                || fields::ranked_on_land(&space, &params.moisture, stream::MOISTURE, &elevation),
+                || {
+                    fields::ranked_on_land(
+                        &space,
+                        &params.vegetation,
+                        stream::VEGETATION,
+                        &elevation,
+                    )
+                },
+            )
+        },
+    );
     let fields: Vec<Fields> = (0..grid.tile_count())
+        .into_par_iter()
         .map(|index| Fields {
             elevation: elevation.values[index],
             winter_temperature: temperatures.winter[index],
