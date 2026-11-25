@@ -12,4 +12,4 @@ pub use camera::{Camera, CameraConfig, InvalidCameraConfig, ScreenPoint, Viewpor
 pub use interpolation::Interpolation;
 pub use palette::{MapPalette, TerrainView};
 pub use renderer::{RenderError, Renderer, UiFrame};
-pub use scene::TerrainStyle;
+pub use scene::{TerrainDisplay, TerrainStyle};

@@ -33,8 +33,46 @@ pub struct MapPalette {
     biomes: Vec<[f32; 4]>,
     unknown_biome: [f32; 4],
     water: [f32; 4],
-    /// For each field in [`Field::ALL`] order, its ramp.
-    fields: Vec<Box<[[f32; 4]]>>,
+    fields: FieldRamps,
+}
+
+/// The ramp of each field: its colour for each run of `2^FIELD_STEP_BITS`
+/// values.
+#[derive(Debug, Clone, PartialEq)]
+struct FieldRamps {
+    elevation: Box<[[f32; 4]]>,
+    winter_temperature: Box<[[f32; 4]]>,
+    summer_temperature: Box<[[f32; 4]]>,
+    moisture: Box<[[f32; 4]]>,
+    vegetation: Box<[[f32; 4]]>,
+}
+
+impl FieldRamps {
+    fn new() -> Self {
+        let ramp = |field| {
+            (0..=u16::MAX)
+                .step_by(1 << FIELD_STEP_BITS)
+                .map(|value| linear(field_colour(field, value)))
+                .collect()
+        };
+        Self {
+            elevation: ramp(Field::Elevation),
+            winter_temperature: ramp(Field::WinterTemperature),
+            summer_temperature: ramp(Field::SummerTemperature),
+            moisture: ramp(Field::Moisture),
+            vegetation: ramp(Field::Vegetation),
+        }
+    }
+
+    const fn get(&self, field: Field) -> &[[f32; 4]] {
+        match field {
+            Field::Elevation => &self.elevation,
+            Field::WinterTemperature => &self.winter_temperature,
+            Field::SummerTemperature => &self.summer_temperature,
+            Field::Moisture => &self.moisture,
+            Field::Vegetation => &self.vegetation,
+        }
+    }
 }
 
 impl MapPalette {
@@ -46,20 +84,11 @@ impl MapPalette {
             .take(table.biome_count())
             .map(|index| linear(table.biome(BiomeIndex(index)).map_colour()))
             .collect();
-        let fields = Field::ALL
-            .iter()
-            .map(|&field| {
-                (0..=u16::MAX)
-                    .step_by(1 << FIELD_STEP_BITS)
-                    .map(|value| linear(field_colour(field, value)))
-                    .collect()
-            })
-            .collect();
         Self {
             biomes,
             unknown_biome: linear(UNKNOWN_BIOME),
             water: linear(WATER),
-            fields,
+            fields: FieldRamps::new(),
         }
     }
 
@@ -77,12 +106,8 @@ impl MapPalette {
                 self.water
             }
             TerrainView::Field(field) => {
-                let position = Field::ALL
-                    .iter()
-                    .position(|&each| each == field)
-                    .expect("every field is in `Field::ALL`");
                 let step = usize::from(tile.fields.get(field) >> FIELD_STEP_BITS);
-                self.fields[position][step]
+                self.fields.get(field)[step]
             }
         }
     }

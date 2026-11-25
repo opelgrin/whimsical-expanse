@@ -20,15 +20,22 @@ pub(crate) struct QuadInstance {
     color: [f32; 4],
 }
 
+/// What the terrain shows, as the developer chose it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerrainDisplay {
+    /// What colours the tiles.
+    pub view: TerrainView,
+    /// Whether the obstacle layer marks the tiles that obstacles block.
+    pub obstacles: bool,
+}
+
 /// How the terrain is drawn.
 #[derive(Debug, Clone, Copy)]
 pub struct TerrainStyle<'a> {
     /// The colours of each view.
     pub palette: &'a MapPalette,
-    /// What colours the tiles.
-    pub view: TerrainView,
-    /// Whether the obstacle layer marks the tiles that obstacles block.
-    pub obstacles: bool,
+    /// What the terrain shows.
+    pub display: TerrainDisplay,
 }
 
 // Placeholder palette in linear RGBA. Assumes an sRGB surface, which
@@ -80,30 +87,23 @@ fn push_terrain(
             instances.push(QuadInstance {
                 origin,
                 size: [1.0, 1.0],
-                color: style.palette.colour(style.view, tile),
+                color: style.palette.colour(style.display.view, tile),
             });
-            if !style.obstacles {
+            let obstacle = tile.obstacle();
+            if !style.display.obstacles || obstacle == ObstacleCell::Empty {
                 continue;
             }
-            match tile.obstacle() {
-                ObstacleCell::Empty => {}
-                ObstacleCell::Part(_) => instances.push(QuadInstance {
-                    origin,
-                    size: [1.0, 1.0],
-                    color: OBSTACLE_SHADE,
-                }),
-                ObstacleCell::Anchor(_) => {
-                    instances.push(QuadInstance {
-                        origin,
-                        size: [1.0, 1.0],
-                        color: OBSTACLE_SHADE,
-                    });
-                    instances.push(QuadInstance {
-                        origin: [origin[0] + 0.3, origin[1] + 0.3],
-                        size: [0.4, 0.4],
-                        color: ANCHOR_MARK,
-                    });
-                }
+            instances.push(QuadInstance {
+                origin,
+                size: [1.0, 1.0],
+                color: OBSTACLE_SHADE,
+            });
+            if let ObstacleCell::Anchor(_) = obstacle {
+                instances.push(QuadInstance {
+                    origin: [origin[0] + 0.3, origin[1] + 0.3],
+                    size: [0.4, 0.4],
+                    color: ANCHOR_MARK,
+                });
             }
         }
     }
@@ -213,8 +213,10 @@ mod tests {
     fn style(palette: &MapPalette) -> TerrainStyle<'_> {
         TerrainStyle {
             palette,
-            view: TerrainView::Biomes,
-            obstacles: false,
+            display: TerrainDisplay {
+                view: TerrainView::Biomes,
+                obstacles: false,
+            },
         }
     }
 

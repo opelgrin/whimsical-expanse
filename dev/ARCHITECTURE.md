@@ -132,11 +132,21 @@ over the world and released over a panel is not left held.
 An input action that changes the world becomes a player command; the rest stay
 presentation.
 
+## Rendering
+
+The renderer owns everything that touches the GPU. It draws the UI in a second
+pass over the world.
+
+The camera wraps with the surface. Its centre stays canonical, so precision
+holds however far it pans, and a view across the seam draws the tiles beyond
+it, and the entities on them, from their canonical columns (see
+[`camera.rs`](../crates/render/src/camera.rs)).
+
 ## UI
 
 The UI is built with egui. For now it is only the
 [debug overlay](CONTEXT.md#presentation)
-([`crates/app/src/overlay.rs`](../crates/app/src/overlay.rs)). It reads
+([`crates/app/src/overlay/`](../crates/app/src/overlay/mod.rs)). It reads
 snapshots like the rest of presentation and never acts on the simulation: it
 returns requests, such as a new speed, which the window applies. egui runs every
 frame, even while the overlay is hidden, so that its view of held buttons and
@@ -146,14 +156,6 @@ the cursor stays current.
 creates a new one from a
 [`Genesis`](../crates/app/src/genesis.rs), with the overlay's seed and
 parameters, then stops the simulation thread and starts another on it.
-
-The renderer owns everything that touches the GPU. It draws the UI in a second
-pass over the world.
-
-The camera wraps with the surface. Its centre stays canonical, so precision
-holds however far it pans, and a view across the seam draws the tiles beyond
-it, and the entities on them, from their canonical columns (see
-[`camera.rs`](../crates/render/src/camera.rs)).
 
 ## Entities and storage
 

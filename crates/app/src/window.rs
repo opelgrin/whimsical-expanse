@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use expanse_core::grid::TilePos;
 use expanse_render::{
     Camera, CameraConfig, Interpolation, InvalidCameraConfig, MapPalette, RenderError, Renderer,
-    ScreenPoint, TerrainStyle, TerrainView, Viewport, WorldPoint,
+    ScreenPoint, TerrainDisplay, TerrainStyle, TerrainView, Viewport, WorldPoint,
 };
 use expanse_sim::{World, WorldConfig};
 use winit::application::ApplicationHandler;
@@ -104,8 +104,10 @@ pub fn run(genesis: Genesis, pacer: TickPacer, config: AppConfig) -> Result<(), 
         palette: MapPalette::new(&genesis.biome_table),
         genesis,
         pacer,
-        view: TerrainView::Biomes,
-        show_obstacles: false,
+        display: TerrainDisplay {
+            view: TerrainView::Biomes,
+            obstacles: false,
+        },
         generation_error: None,
         title: config.title,
         initial_logical_size: LogicalSize::new(config.window_width, config.window_height),
@@ -197,8 +199,7 @@ struct App {
     /// The pacer each new simulation starts with.
     pacer: TickPacer,
     palette: MapPalette,
-    view: TerrainView,
-    show_obstacles: bool,
+    display: TerrainDisplay,
     /// Why the last regeneration failed, if it did.
     generation_error: Option<String>,
     title: String,
@@ -232,8 +233,7 @@ impl App {
                     simulation.step();
                 }
             }
-            OverlayRequest::SetView(view) => self.view = view,
-            OverlayRequest::ShowObstacles(shown) => self.show_obstacles = shown,
+            OverlayRequest::SetDisplay(display) => self.display = display,
             OverlayRequest::Regenerate(settings) => self.regenerate(*settings),
         }
     }
@@ -339,8 +339,7 @@ impl App {
             OverlayStatus {
                 tick: snapshots.current.tick,
                 speed: self.speed.current,
-                view: self.view,
-                obstacles: self.show_obstacles,
+                display: self.display,
                 inspected: inspected.as_ref(),
                 biome_table: &self.genesis.biome_table,
                 generation_error: self.generation_error.as_deref(),
@@ -353,8 +352,7 @@ impl App {
         };
         let terrain_style = TerrainStyle {
             palette: &self.palette,
-            view: self.view,
-            obstacles: self.show_obstacles,
+            display: self.display,
         };
         if let Err(err) = graphics.renderer.render(
             &self.camera,
