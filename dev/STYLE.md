@@ -51,7 +51,9 @@ the smallest item possible.
 
 ## Parallel code
 
-Parallel work uses rayon (`use rayon::prelude::*`).
+Parallel work uses rayon. Import it with `use rayon::prelude::*`. This is the
+only glob import outside test modules: the prelude holds only the traits that
+add the parallel methods, and clippy's `wildcard_imports` exempts preludes.
 The simulation thread is the only thread started by hand. Library crates run
 in whatever pool they are called from; only the binaries size the global pool.
 
