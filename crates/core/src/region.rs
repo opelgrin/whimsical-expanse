@@ -75,7 +75,24 @@ impl Regions {
         let width = usize::try_from(grid.width()).expect("grid sizes are positive");
         let height = usize::try_from(grid.height()).expect("grid sizes are positive");
 
-        // The runs of each row: the region of a tile is the region of its run.
+        // Run-based connected-component labelling. A run is a maximal stretch
+        // of tiles in one row that share a key (see `Run`). All tiles of a run
+        // are in the same region, so the work is done on runs, which are far
+        // fewer than tiles.
+        //
+        // 1. Split each row into runs. Rows are independent, so this is
+        //    parallel.
+        // 2. Link the runs that touch and share a key: the two ends of a row
+        //    across the seam, and runs in adjacent rows that share a column.
+        //    Each pair of adjacent rows is independent, so this is parallel.
+        // 3. Join the linked runs with union-find and number the regions.
+        //    This is sequential, but it works on runs and links, not tiles.
+        // 4. Give each tile the region of its run, in parallel by row, and
+        //    list the tiles of each region.
+        //
+        // Union-find keeps the lowest run of each set as its root, so regions
+        // are numbered in the order of their first tile. A row-major flood
+        // fill gives the same numbering.
         let rows: Vec<Vec<Run<K>>> = (0..height)
             .into_par_iter()
             .map(|y| runs_of_row(y * width, width, &key))
@@ -138,9 +155,12 @@ impl Regions {
     }
 }
 
-/// The pairs of runs, by number among all runs in row-major order, that are
-/// in the same region: across the seam, and down to the next row.
-/// `row_starts` holds the number of each row's first run.
+/// The pairs of runs that touch and share a key, and so are in the same
+/// region. A pair is either the first and last runs of a row, which meet
+/// across the seam, or two runs in adjacent rows that share a column.
+///
+/// Runs are numbered among all runs in row-major order. `row_starts` holds
+/// the number of each row's first run.
 fn links<K: PartialEq + Sync>(
     rows: &[Vec<Run<K>>],
     row_starts: &[usize],
@@ -190,7 +210,8 @@ fn number_runs<K>(runs: &[&Run<K>], links: Vec<(usize, usize)>) -> Vec<u32> {
 /// The tiles of every region, region after region, and where each region's
 /// tiles start, followed by the total.
 ///
-/// Sequential: the runs are scattered over the regions. Each write is cheap.
+/// Sequential: the runs of one region come from many rows, so the rows cannot
+/// fill `members` independently. The pass copies one range of tiles per run.
 fn members<K>(runs: &[&Run<K>], region_of_run: &[u32]) -> (Vec<u32>, Vec<usize>) {
     let count = region_of_run
         .iter()
@@ -215,8 +236,10 @@ fn members<K>(runs: &[&Run<K>], region_of_run: &[u32]) -> (Vec<u32>, Vec<usize>)
     (members, starts)
 }
 
-/// Tiles of one row with the same key, side by side: row-major indices
-/// `start..end`. The seam does not split runs here; [`seam_link`] joins them.
+/// A maximal stretch of tiles in one row that share a key: row-major indices
+/// `start..end`. A run never wraps across the seam. When tiles with the same
+/// key cross the seam, they form two runs, the first and the last of the row,
+/// and [`seam_link`] links them.
 struct Run<K> {
     start: usize,
     end: usize,
