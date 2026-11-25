@@ -31,6 +31,20 @@ immutable chunks rather than copying them.
 **Debug overlay**: development controls and readings drawn over the world,
 hidden until toggled. Not the game's UI.
 
+**Terrain view**: what colours the terrain on screen: each tile's biome, or
+one of its fields on a colour ramp. Chosen in the debug overlay.
+
+**Obstacle layer**: marks over any terrain view on the tiles that obstacles
+block, the anchor differently from the rest of its footprint. Shown from the
+debug overlay.
+
+**Tile inspector**: the debug overlay's reading of the tile under the cursor:
+its position, chunk, fields, biome and obstacle.
+
+**Regeneration**: starting a new world from the debug overlay, with another
+seed or other generation parameters. A development action, not a player
+command.
+
 ## Spaces and terrain
 
 **World**: the whole simulation state at one tick: every space, what lives in

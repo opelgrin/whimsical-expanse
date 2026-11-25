@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::hash::BuildHasher;
 
+use expanse_core::grid::Grid;
 use expanse_core::hash::FixedBuildHasher;
 use expanse_core::rng::Rng;
 use expanse_core::time::Tick;
@@ -93,11 +94,10 @@ impl World {
         })
     }
 
-    /// The world's width and height in tiles.
+    /// The shape of the surface.
     #[must_use]
-    pub const fn dimensions(&self) -> (i32, i32) {
-        let grid = self.terrain.grid();
-        (grid.width(), grid.height())
+    pub const fn grid(&self) -> Grid {
+        self.terrain.grid()
     }
 
     /// The current tick.

@@ -5,7 +5,9 @@
 //! presentation and the debug overlay.
 
 pub mod camera_controls;
+pub mod genesis;
 pub mod input;
+pub mod inspector;
 pub mod overlay;
 pub mod pacer;
 pub mod simulation_thread;

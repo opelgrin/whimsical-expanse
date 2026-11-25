@@ -14,10 +14,9 @@ egui.workspace = true
 expanse-core = { path = "../core" }
 expanse-render = { path = "../render" }
 expanse-sim = { path = "../sim" }
-winit.workspace = true
-
-[dev-dependencies]
 expanse-terrain = { path = "../terrain" }
+expanse-worldgen = { path = "../worldgen" }
+winit.workspace = true
 
 [lints]
 workspace = true

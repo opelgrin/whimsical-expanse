@@ -5,11 +5,12 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use expanse_core::grid::TilePos;
 use expanse_render::{
-    Camera, CameraConfig, Interpolation, InvalidCameraConfig, RenderError, Renderer, ScreenPoint,
-    Viewport,
+    Camera, CameraConfig, Interpolation, InvalidCameraConfig, MapPalette, RenderError, Renderer,
+    ScreenPoint, TerrainStyle, TerrainView, Viewport, WorldPoint,
 };
-use expanse_sim::World;
+use expanse_sim::{World, WorldConfig};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};
@@ -19,8 +20,10 @@ use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
 
 use crate::camera_controls::{CameraControls, CameraControlsConfig};
+use crate::genesis::{Genesis, GenesisError};
 use crate::input::{Button, InputAction, InputConfig, InputEvent, InputState, ScrollAmount};
-use crate::overlay::{DebugOverlay, OverlayRequest, OverlayStatus};
+use crate::inspector::inspect;
+use crate::overlay::{DebugOverlay, GenerationSettings, OverlayRequest, OverlayStatus};
 use crate::pacer::{Speed, TickPacer};
 use crate::simulation_thread::SimulationHandle;
 
@@ -34,7 +37,8 @@ pub struct AppConfig {
     pub window_height: f64,
     /// Initial simulation speed.
     pub initial_speed: Speed,
-    /// Initial camera state and limits.
+    /// Initial camera zoom and its limits. The camera opens on the world's
+    /// first entity.
     pub camera: CameraConfig,
     /// Key and mouse bindings, and how input devices are read.
     pub input: InputConfig,
@@ -45,6 +49,8 @@ pub struct AppConfig {
 /// Errors that can occur while creating or running the application window.
 #[derive(Debug)]
 pub enum AppError {
+    /// The world could not be created.
+    Genesis(GenesisError),
     /// Invalid camera configuration.
     InvalidCamera(InvalidCameraConfig),
     /// Failed to create or run the platform event loop.
@@ -58,6 +64,7 @@ pub enum AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Genesis(err) => write!(f, "{err}"),
             Self::InvalidCamera(err) => write!(f, "invalid camera configuration: {err}"),
             Self::EventLoop(err) => write!(f, "event loop error: {err}"),
             Self::CreateWindow(err) => write!(f, "failed to create window: {err}"),
@@ -69,6 +76,7 @@ impl fmt::Display for AppError {
 impl Error for AppError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::Genesis(err) => Some(err),
             Self::InvalidCamera(err) => Some(err),
             Self::EventLoop(err) => Some(err),
             Self::CreateWindow(err) => Some(err),
@@ -77,20 +85,28 @@ impl Error for AppError {
     }
 }
 
-/// Opens the game window, spawns the simulation thread for `world`, and runs
-/// until the window is closed or a fatal error stops it. The camera uses the dimensions of `world` for
-/// its bounds and the displayed grid.
+/// Creates a world from `genesis`, opens the game window, spawns the
+/// simulation thread, and runs until the window is closed or a fatal error
+/// stops it. The debug overlay can start new worlds from other settings.
 ///
 /// # Errors
 ///
-/// Returns [`AppError`] if the camera configuration is invalid, the window or
-/// event loop cannot be created, or GPU initialization/presentation fails.
-pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppError> {
+/// Returns [`AppError`] if the world cannot be created, the camera
+/// configuration is invalid, the window or event loop cannot be created, or
+/// GPU initialization/presentation fails.
+pub fn run(genesis: Genesis, pacer: TickPacer, config: AppConfig) -> Result<(), AppError> {
+    let world = genesis.create_world().map_err(AppError::Genesis)?;
     let camera = camera_for_world(&world, config.camera)?;
     let event_loop = EventLoop::new().map_err(AppError::EventLoop)?;
 
-    let simulation = SimulationHandle::spawn(world, pacer, config.initial_speed);
+    let simulation = SimulationHandle::spawn(world, pacer.clone(), config.initial_speed);
     let mut app = App {
+        palette: MapPalette::new(&genesis.biome_table),
+        genesis,
+        pacer,
+        view: TerrainView::Biomes,
+        show_obstacles: false,
+        generation_error: None,
         title: config.title,
         initial_logical_size: LogicalSize::new(config.window_width, config.window_height),
         camera,
@@ -115,9 +131,20 @@ pub fn run(world: World, pacer: TickPacer, config: AppConfig) -> Result<(), AppE
     Ok(())
 }
 
+/// A camera over `world`, centred on its first entity, wherever the surface
+/// let it start.
 fn camera_for_world(world: &World, config: CameraConfig) -> Result<Camera, AppError> {
-    let (width, height) = world.dimensions();
-    Camera::new(config, width, height).map_err(AppError::InvalidCamera)
+    let snapshot = world.snapshot();
+    let start = snapshot
+        .entities
+        .first()
+        .map_or(TilePos::new(0, 0), |entity| entity.motion.from);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "tile coordinates of a surface fit accurately in f32"
+    )]
+    let centre = WorldPoint::new(start.x as f32 + 0.5, start.y as f32 + 0.5);
+    Camera::new(config, world.grid(), centre).map_err(AppError::InvalidCamera)
 }
 
 struct Graphics {
@@ -165,6 +192,15 @@ impl SpeedSelection {
 }
 
 struct App {
+    /// What the running world was created from.
+    genesis: Genesis,
+    /// The pacer each new simulation starts with.
+    pacer: TickPacer,
+    palette: MapPalette,
+    view: TerrainView,
+    show_obstacles: bool,
+    /// Why the last regeneration failed, if it did.
+    generation_error: Option<String>,
     title: String,
     initial_logical_size: LogicalSize<f64>,
     camera: Camera,
@@ -196,7 +232,45 @@ impl App {
                     simulation.step();
                 }
             }
+            OverlayRequest::SetView(view) => self.view = view,
+            OverlayRequest::ShowObstacles(shown) => self.show_obstacles = shown,
+            OverlayRequest::Regenerate(settings) => self.regenerate(*settings),
         }
+    }
+
+    /// Replaces the running world with one created from `settings`, at the
+    /// same speed and seen through the same camera. Keeps the running world,
+    /// and records why, if the new one cannot be created.
+    ///
+    /// Generation blocks the window for as long as it takes. It is a
+    /// development action, and the simulation goes on meanwhile.
+    fn regenerate(&mut self, settings: GenerationSettings) {
+        let genesis = Genesis {
+            world: WorldConfig {
+                seed: settings.seed,
+                ..self.genesis.world.clone()
+            },
+            surface: settings.surface,
+            biome_table: self.genesis.biome_table.clone(),
+        };
+        match genesis.create_world() {
+            Ok(world) => {
+                self.camera.set_grid(world.grid());
+                if let Some(simulation) = self.simulation.take() {
+                    simulation.shutdown();
+                }
+                self.simulation = Some(SimulationHandle::spawn(
+                    world,
+                    self.pacer.clone(),
+                    self.speed.current,
+                ));
+                self.genesis = genesis;
+                self.generation_error = None;
+            }
+            Err(err) => self.generation_error = Some(err.to_string()),
+        }
+        // The time spent generating is not a frame to catch up on.
+        self.last_frame = now();
     }
 
     fn current_viewport(window: &Window) -> (Viewport, f32) {
@@ -254,12 +328,22 @@ impl App {
             return;
         }
         let snapshots = simulation.latest_snapshots();
+        let inspected = self
+            .input
+            .cursor()
+            .and_then(|cursor| self.camera.tile_at(cursor, viewport))
+            .and_then(|tile| inspect(&snapshots.current.terrain, tile));
         let overlay_frame = graphics.overlay.run(
             &graphics.window,
             dt,
             OverlayStatus {
                 tick: snapshots.current.tick,
                 speed: self.speed.current,
+                view: self.view,
+                obstacles: self.show_obstacles,
+                inspected: inspected.as_ref(),
+                biome_table: &self.genesis.biome_table,
+                generation_error: self.generation_error.as_deref(),
             },
         );
         let interpolation = Interpolation {
@@ -267,11 +351,17 @@ impl App {
             current: &snapshots.current,
             progress: snapshots.progress(frame_time),
         };
+        let terrain_style = TerrainStyle {
+            palette: &self.palette,
+            view: self.view,
+            obstacles: self.show_obstacles,
+        };
         if let Err(err) = graphics.renderer.render(
             &self.camera,
             viewport,
             scale_factor,
             &interpolation,
+            &terrain_style,
             &overlay_frame.ui(),
         ) {
             self.fatal_error = Some(AppError::Render(err));
@@ -318,7 +408,13 @@ impl ApplicationHandler for App {
         };
         self.last_frame = now();
         window.request_redraw();
-        let overlay = DebugOverlay::new(&window);
+        let overlay = DebugOverlay::new(
+            &window,
+            GenerationSettings {
+                seed: self.genesis.world.seed,
+                surface: self.genesis.surface.clone(),
+            },
+        );
         self.graphics = Some(Graphics {
             window,
             renderer,
@@ -439,8 +535,6 @@ fn now() -> Instant {
 
 #[cfg(test)]
 mod tests {
-    use expanse_render::WorldPoint;
-    use expanse_render::camera::VisibleTileRange;
     use expanse_sim::WorldConfig;
     use expanse_terrain::{BiomeIndex, CHUNK_SIZE, Fields, Terrain, Tile};
 
@@ -467,10 +561,11 @@ mod tests {
         assert_eq!(speed.current, Speed::Faster);
     }
 
-    /// Catches camera bounds that differ from the simulation grid, including
-    /// swapped dimensions. The camera also determines the grid drawn on screen.
+    /// Catches a camera over another grid than the world's, such as one with
+    /// swapped dimensions, which would wrap at the wrong column, and a camera
+    /// that does not open on the wanderer.
     #[test]
-    fn camera_uses_the_world_grid_for_panning_and_visible_tiles() {
+    fn the_camera_opens_on_the_wanderer_and_wraps_with_the_world() {
         let fields = Fields {
             elevation: 0,
             winter_temperature: 0,
@@ -485,30 +580,29 @@ mod tests {
             ticks_per_step: 2,
         };
         let world = World::new(config, surface).expect("valid world");
-        let (width, height) = (2 * CHUNK_SIZE, CHUNK_SIZE);
+        let start = world.snapshot().entities[0].motion.from;
+        let pixels_per_tile = 10.0;
         let mut camera = camera_for_world(
             &world,
             CameraConfig {
-                initial_centre: WorldPoint::new(1.0, 1.0),
-                initial_pixels_per_tile: 10.0,
+                initial_pixels_per_tile: pixels_per_tile,
                 min_pixels_per_tile: 5.0,
                 max_pixels_per_tile: 20.0,
             },
         )
         .expect("valid camera");
-
-        camera.pan_by_screen_offset(10_000.0, 10_000.0);
         #[expect(clippy::cast_precision_loss, reason = "a small test world")]
-        let far_corner = WorldPoint::new(width as f32, height as f32);
-        assert_eq!(camera.centre(), far_corner);
-        assert_eq!(
-            camera.visible_tiles(Viewport::new(100_000.0, 100_000.0)),
-            Some(VisibleTileRange {
-                min_x: 0,
-                max_x: width - 1,
-                min_y: 0,
-                max_y: height - 1,
-            })
+        let (opening, width, height) = (
+            WorldPoint::new(start.x as f32 + 0.5, start.y as f32 + 0.5),
+            (2 * CHUNK_SIZE) as f32,
+            CHUNK_SIZE as f32,
         );
+        assert_eq!(camera.centre(), opening);
+
+        // Once round the world, east, comes back to the same column.
+        camera.pan_by_screen_offset(width * pixels_per_tile, 0.0);
+        assert!((camera.centre().x - opening.x).abs() < 1e-3);
+        camera.pan_by_screen_offset(0.0, 10_000.0);
+        assert_eq!(camera.centre().y, height);
     }
 }
