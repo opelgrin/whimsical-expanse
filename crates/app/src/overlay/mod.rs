@@ -2,15 +2,25 @@
 //!
 //! The overlay never acts on the simulation itself. It shows what it is given
 //! and returns what the developer asked for, which the window then applies.
+//! Each panel is in its own module.
+
+mod generation;
+mod inspector;
+mod speed;
+mod view;
 
 use std::time::Duration;
 
 use egui::{Align2, ClippedPrimitive, TexturesDelta, ViewportId};
 use expanse_core::time::Tick;
-use expanse_render::UiFrame;
+use expanse_render::{TerrainDisplay, UiFrame};
+use expanse_terrain::BiomeTable;
 use winit::event::WindowEvent;
 use winit::window::Window;
 
+pub use generation::GenerationSettings;
+
+use crate::inspector::TileReport;
 use crate::pacer::Speed;
 
 /// The weight of the newest frame in the averaged frame time. Small enough
@@ -18,30 +28,34 @@ use crate::pacer::Speed;
 /// within a second.
 const FRAME_TIME_SMOOTHING: f32 = 0.05;
 
-/// The speeds the overlay offers, with their labels, in display order.
-const SPEED_CHOICES: [(Speed, &str); 4] = [
-    (Speed::Paused, "Pause"),
-    (Speed::Normal, "1×"),
-    (Speed::Fast, "2×"),
-    (Speed::Faster, "3×"),
-];
-
 /// What the overlay shows about the running game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OverlayStatus {
+#[derive(Debug, Clone, Copy)]
+pub struct OverlayStatus<'a> {
     /// The tick of the most recent snapshot.
     pub tick: Tick,
     /// The selected simulation speed.
     pub speed: Speed,
+    /// What the terrain shows.
+    pub display: TerrainDisplay,
+    /// The tile under the cursor, if any.
+    pub inspected: Option<&'a TileReport>,
+    /// The biomes and obstacle kinds the terrain refers to.
+    pub biome_table: &'a BiomeTable,
+    /// Why the last regeneration failed, if it did.
+    pub generation_error: Option<&'a str>,
 }
 
 /// A change the developer asked for through the overlay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum OverlayRequest {
     /// Run the simulation at this speed.
     SetSpeed(Speed),
     /// Run one tick while paused.
     Step,
+    /// Show the terrain this way.
+    SetDisplay(TerrainDisplay),
+    /// Start a new world from these settings.
+    Regenerate(Box<GenerationSettings>),
 }
 
 /// What the overlay produced for one frame.
@@ -74,12 +88,15 @@ pub struct DebugOverlay {
     context: egui::Context,
     window_input: egui_winit::State,
     average_frame_seconds: Option<f32>,
+    /// The settings being edited for the next world.
+    generation: GenerationSettings,
 }
 
 impl DebugOverlay {
-    /// Creates a hidden overlay for `window`.
+    /// Creates a hidden overlay for `window`, whose generation settings start
+    /// as `generation`.
     #[must_use]
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, generation: GenerationSettings) -> Self {
         let context = egui::Context::default();
         #[expect(
             clippy::cast_possible_truncation,
@@ -98,6 +115,7 @@ impl DebugOverlay {
             context,
             window_input,
             average_frame_seconds: None,
+            generation,
         }
     }
 
@@ -120,19 +138,26 @@ impl DebugOverlay {
         &mut self,
         window: &Window,
         frame_time: Duration,
-        status: OverlayStatus,
+        status: OverlayStatus<'_>,
     ) -> OverlayFrame {
         self.record_frame_time(frame_time);
         let raw_input = self.window_input.take_egui_input(window);
         let visible = self.visible;
         let average_frame_seconds = self.average_frame_seconds;
+        let generation = &mut self.generation;
         let mut requests = Vec::new();
         let output = self.context.run_pass(raw_input, |context| {
             // `egui` may run a pass again and discard the first one, so only
             // the requests of the last pass count.
             requests.clear();
             if visible {
-                show(context, status, average_frame_seconds, &mut requests);
+                show(
+                    context,
+                    status,
+                    average_frame_seconds,
+                    generation,
+                    &mut requests,
+                );
             }
         });
         self.window_input
@@ -162,8 +187,9 @@ impl DebugOverlay {
 
 fn show(
     context: &egui::Context,
-    status: OverlayStatus,
+    status: OverlayStatus<'_>,
     average_frame_seconds: Option<f32>,
+    generation: &mut GenerationSettings,
     requests: &mut Vec<OverlayRequest>,
 ) {
     egui::Window::new("Debug")
@@ -180,17 +206,12 @@ fn show(
                 ));
             }
             ui.separator();
-            ui.horizontal(|ui| {
-                for (speed, label) in SPEED_CHOICES {
-                    let selected = status.speed == speed;
-                    if ui.selectable_label(selected, label).clicked() && !selected {
-                        requests.push(OverlayRequest::SetSpeed(speed));
-                    }
-                }
-            });
-            let paused = status.speed == Speed::Paused;
-            if ui.add_enabled(paused, egui::Button::new("Step")).clicked() {
-                requests.push(OverlayRequest::Step);
-            }
+            speed::show(ui, status.speed, requests);
+            ui.separator();
+            view::show(ui, status.display, requests);
+            ui.separator();
+            inspector::show(ui, status.inspected, status.biome_table);
+            ui.separator();
+            generation::show(ui, generation, status.generation_error, requests);
         });
 }

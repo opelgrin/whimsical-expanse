@@ -4,11 +4,18 @@
 //! Tile `(x, y)` spans `[x, x + 1] × [y, y + 1]` in world space, with `+x`
 //! pointing east (right) and `+y` pointing south (down), matching top-down
 //! screen coordinates.
+//!
+//! The world wraps east–west, so the camera does too. Its centre stays
+//! canonical, with `x` in `0..width`, so that precision holds however far it
+//! pans. A view that spans the seam shows world coordinates beyond it, such
+//! as `x = -1` for the last column: those points name canonical tiles through
+//! the [`Grid`].
 
 use std::error::Error;
 use std::fmt;
 
 use bytemuck::{Pod, Zeroable};
+use expanse_core::grid::{Grid, TilePos};
 
 /// A point in continuous world-tile coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -66,6 +73,10 @@ impl Viewport {
 }
 
 /// Inclusive range of tile coordinates visible in a viewport.
+///
+/// Rows lie between the north and south edges. Columns are not canonical:
+/// where the view spans the seam, they continue beyond it, and a view wider
+/// than the world covers some columns more than once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VisibleTileRange {
     pub min_x: i32,
@@ -74,14 +85,12 @@ pub struct VisibleTileRange {
     pub max_y: i32,
 }
 
-/// Initial state and zoom limits of a [`Camera`].
+/// Initial zoom and zoom limits of a [`Camera`].
 ///
 /// Callers state every parameter explicitly so that tests never depend on
 /// game tuning.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CameraConfig {
-    /// Initial world position shown at the centre of the viewport.
-    pub initial_centre: WorldPoint,
     /// Initial scale, in logical pixels per tile.
     pub initial_pixels_per_tile: f32,
     /// Smallest allowed scale (most zoomed out), in logical pixels per tile.
@@ -93,8 +102,6 @@ pub struct CameraConfig {
 /// Why camera creation failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidCameraConfig {
-    /// World dimensions are zero or negative.
-    EmptyWorld,
     /// Zoom bounds are not finite and positive with `min <= max`, or the
     /// initial scale is not finite.
     InvalidZoomBounds,
@@ -105,7 +112,6 @@ pub enum InvalidCameraConfig {
 impl fmt::Display for InvalidCameraConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyWorld => write!(f, "world dimensions must be at least 1x1 tiles"),
             Self::InvalidZoomBounds => write!(
                 f,
                 "zoom bounds must be finite, positive, and have min <= max"
@@ -131,31 +137,29 @@ pub struct CameraUniform {
 /// Pure 2D camera state and coordinate conversions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera {
+    /// Canonical: `x` lies in `0..width` and `y` in `0..=height`.
     centre: WorldPoint,
     pixels_per_tile: f32,
     min_pixels_per_tile: f32,
     max_pixels_per_tile: f32,
-    world_width: i32,
-    world_height: i32,
+    grid: Grid,
 }
 
 impl Camera {
-    /// Creates a camera from `config` and the world dimensions in tiles.
-    /// Clamps the initial centre to the world and the zoom to its limits.
+    /// Creates a camera over `grid`, the world's shape, centred on `centre`.
+    /// Wraps the centre across the seam, clamps it between the north and
+    /// south edges, and clamps the zoom to its limits.
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidCameraConfig`] if the world is empty, if the zoom bounds
-    /// are not finite and positive with `min <= max`, or if the initial scale or
-    /// centre is not finite.
+    /// Returns [`InvalidCameraConfig`] if the zoom bounds are not finite and
+    /// positive with `min <= max`, or if the initial scale or the centre is
+    /// not finite.
     pub fn new(
         config: CameraConfig,
-        world_width: i32,
-        world_height: i32,
+        grid: Grid,
+        centre: WorldPoint,
     ) -> Result<Self, InvalidCameraConfig> {
-        if world_width < 1 || world_height < 1 {
-            return Err(InvalidCameraConfig::EmptyWorld);
-        }
         if !config.min_pixels_per_tile.is_finite()
             || !config.max_pixels_per_tile.is_finite()
             || !config.initial_pixels_per_tile.is_finite()
@@ -164,28 +168,35 @@ impl Camera {
         {
             return Err(InvalidCameraConfig::InvalidZoomBounds);
         }
-        if !config.initial_centre.x.is_finite() || !config.initial_centre.y.is_finite() {
+        if !centre.x.is_finite() || !centre.y.is_finite() {
             return Err(InvalidCameraConfig::NonFiniteCentre);
         }
 
         let mut camera = Self {
-            centre: config.initial_centre,
+            centre,
             pixels_per_tile: config
                 .initial_pixels_per_tile
                 .clamp(config.min_pixels_per_tile, config.max_pixels_per_tile),
             min_pixels_per_tile: config.min_pixels_per_tile,
             max_pixels_per_tile: config.max_pixels_per_tile,
-            world_width,
-            world_height,
+            grid,
         };
-        camera.clamp_centre();
+        camera.wrap_centre();
         Ok(camera)
     }
 
-    /// Current world coordinate at the centre of the viewport.
+    /// Current world coordinate at the centre of the viewport. It is
+    /// canonical: `x` lies in `0..width`.
     #[must_use]
     pub const fn centre(&self) -> WorldPoint {
         self.centre
+    }
+
+    /// Moves the camera over `grid`, a world of another shape, keeping its
+    /// centre where it is if the world still has it.
+    pub fn set_grid(&mut self, grid: Grid) {
+        self.grid = grid;
+        self.wrap_centre();
     }
 
     /// Current scale in logical pixels per tile.
@@ -203,6 +214,22 @@ impl Camera {
             self.centre.x + (screen.x - viewport_centre.x) / self.pixels_per_tile,
             self.centre.y + (screen.y - viewport_centre.y) / self.pixels_per_tile,
         )
+    }
+
+    /// The canonical tile under a point on the window, or `None` beyond the
+    /// north and south edges.
+    #[must_use]
+    pub fn tile_at(&self, screen: ScreenPoint, viewport: Viewport) -> Option<TilePos> {
+        let world = self.screen_to_world(screen, viewport);
+        if !world.x.is_finite() || !world.y.is_finite() {
+            return None;
+        }
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a point on the window lies within a few world widths of the canonical centre"
+        )]
+        let tile = TilePos::new(world.x.floor() as i32, world.y.floor() as i32);
+        self.grid.canonical(tile)
     }
 
     /// Converts a world coordinate to logical screen pixels.
@@ -226,7 +253,7 @@ impl Camera {
         }
         self.centre.x += dx / self.pixels_per_tile;
         self.centre.y += dy / self.pixels_per_tile;
-        self.clamp_centre();
+        self.wrap_centre();
     }
 
     /// Scales `pixels_per_tile` by `factor`, keeping the world point under
@@ -246,12 +273,12 @@ impl Camera {
             anchor_world.x - (anchor.x - viewport_centre.x) / self.pixels_per_tile,
             anchor_world.y - (anchor.y - viewport_centre.y) / self.pixels_per_tile,
         );
-        self.clamp_centre();
+        self.wrap_centre();
     }
 
-    /// Computes the range of tiles inside this camera's world (`0..world_width`
-    /// by `0..world_height`) that overlap `viewport`, or `None` if the viewport
-    /// is empty.
+    /// Computes the range of tiles that overlap `viewport`, or `None` if the
+    /// viewport is empty. Rows are clamped to the world's; columns are not
+    /// (see [`VisibleTileRange`]).
     #[must_use]
     pub fn visible_tiles(&self, viewport: Viewport) -> Option<VisibleTileRange> {
         if !viewport.is_non_empty() {
@@ -263,13 +290,13 @@ impl Camera {
 
         #[expect(
             clippy::cast_possible_truncation,
-            reason = "clamped to world bounds before casting to i32"
+            reason = "a viewport spans a bounded number of tiles around the canonical centre"
         )]
         let (min_x, max_x, min_y, max_y) = {
-            let min_x = (top_left.x.floor() as i32).max(0);
-            let max_x = ((bottom_right.x.ceil() as i32) - 1).min(self.world_width - 1);
+            let min_x = top_left.x.floor() as i32;
+            let max_x = (bottom_right.x.ceil() as i32) - 1;
             let min_y = (top_left.y.floor() as i32).max(0);
-            let max_y = ((bottom_right.y.ceil() as i32) - 1).min(self.world_height - 1);
+            let max_y = ((bottom_right.y.ceil() as i32) - 1).min(self.grid.height() - 1);
             (min_x, max_x, min_y, max_y)
         };
 
@@ -308,14 +335,18 @@ impl Camera {
         }
     }
 
-    fn clamp_centre(&mut self) {
+    /// Wraps the centre across the seam and clamps it between the north and
+    /// south edges.
+    fn wrap_centre(&mut self) {
         #[expect(
             clippy::cast_precision_loss,
             reason = "world dimensions in tiles fit comfortably in f32"
         )]
-        let (max_x, max_y) = (self.world_width as f32, self.world_height as f32);
-        self.centre.x = self.centre.x.clamp(0.0, max_x);
-        self.centre.y = self.centre.y.clamp(0.0, max_y);
+        let (width, height) = (self.grid.width() as f32, self.grid.height() as f32);
+        let x = self.centre.x.rem_euclid(width);
+        // A tiny negative `x` rounds up to `width` itself, which is not canonical.
+        self.centre.x = if x < width { x } else { 0.0 };
+        self.centre.y = self.centre.y.clamp(0.0, height);
     }
 }
 
@@ -323,18 +354,22 @@ impl Camera {
 mod tests {
     use super::*;
 
+    const CONFIG: CameraConfig = CameraConfig {
+        initial_pixels_per_tile: 40.0,
+        min_pixels_per_tile: 10.0,
+        max_pixels_per_tile: 160.0,
+    };
+
+    fn grid(width: i32, height: i32) -> Grid {
+        Grid::new(width, height).expect("a grid with tiles")
+    }
+
+    fn camera_at(config: CameraConfig, grid: Grid, x: f32, y: f32) -> Camera {
+        Camera::new(config, grid, WorldPoint::new(x, y)).expect("valid camera config")
+    }
+
     fn test_camera() -> Camera {
-        Camera::new(
-            CameraConfig {
-                initial_centre: WorldPoint::new(10.0, 8.0),
-                initial_pixels_per_tile: 40.0,
-                min_pixels_per_tile: 10.0,
-                max_pixels_per_tile: 160.0,
-            },
-            30,
-            20,
-        )
-        .expect("valid camera config")
+        camera_at(CONFIG, grid(30, 20), 10.0, 8.0)
     }
 
     fn assert_close(actual: f32, expected: f32) {
@@ -360,6 +395,70 @@ mod tests {
         let screen = camera.world_to_screen(WorldPoint::new(13.0, 6.0), viewport);
         assert_close(screen.x, 520.0);
         assert_close(screen.y, 220.0);
+    }
+
+    /// Catches a screen point that names a tile beyond the seam, or the wrong
+    /// tile next to it, and rows beyond the edges that name a tile. The
+    /// camera looks at the seam, and its view is wider than the world, so
+    /// points on either side, and a whole world away, must all name
+    /// canonical tiles. Values worked out by hand.
+    #[test]
+    fn a_screen_point_names_the_canonical_tile_on_either_side_of_the_seam() {
+        let config = CameraConfig {
+            initial_pixels_per_tile: 10.0,
+            ..CONFIG
+        };
+        let camera = camera_at(config, grid(64, 12), 0.0, 5.5);
+        // At 10 px/tile, the centre of the viewport (1000, 50) shows (0, 5.5).
+        let viewport = Viewport::new(2000.0, 100.0);
+        let tile = |x, y| camera.tile_at(ScreenPoint::new(x, y), viewport);
+
+        assert_eq!(tile(995.0, 50.0), Some(TilePos::new(63, 5)));
+        assert_eq!(tile(1005.0, 50.0), Some(TilePos::new(0, 5)));
+        // 64.5 tiles west of the centre: half a tile west of the seam, a
+        // world further.
+        assert_eq!(tile(355.0, 50.0), Some(TilePos::new(63, 5)));
+        assert_eq!(tile(1645.0, 50.0), Some(TilePos::new(0, 5)));
+        // Half a tile beyond the north edge, and on the south edge's last row.
+        assert_eq!(tile(1005.0, -10.0), None);
+        assert_eq!(tile(1005.0, 110.0), Some(TilePos::new(0, 11)));
+        assert_eq!(tile(1005.0, 125.0), None);
+    }
+
+    /// Catches panning scaling with zoom in the wrong direction, a centre
+    /// that is clamped at the seam instead of crossing it, or that leaves the
+    /// canonical columns and loses precision on a long pan. Rows are still
+    /// clamped at the edges.
+    #[test]
+    fn panning_crosses_the_seam_both_ways_and_stops_at_the_edges() {
+        let mut camera = camera_at(CONFIG, grid(30, 20), 0.5, 8.0);
+        // At 40 px/tile, 40 px is one tile.
+        camera.pan_by_screen_offset(-40.0, -40.0);
+        assert_close(camera.centre().x, 29.5);
+        assert_close(camera.centre().y, 7.0);
+        camera.pan_by_screen_offset(80.0, 0.0);
+        assert_close(camera.centre().x, 1.5);
+
+        // 2,500 tiles west, many times round the world: 1.5 - 2,500 is 21.5
+        // modulo 30.
+        camera.pan_by_screen_offset(-100_000.0, 100_000.0);
+        assert_close(camera.centre().x, 21.5);
+        assert_close(camera.centre().y, 20.0);
+
+        camera.pan_by_screen_offset(f32::NAN, 10.0);
+        camera.pan_by_screen_offset(10.0, f32::INFINITY);
+        assert_close(camera.centre().x, 21.5);
+        assert_close(camera.centre().y, 20.0);
+    }
+
+    /// Catches a centre left just outside the canonical columns, which
+    /// rounding makes possible for a tiny step west of the seam.
+    #[test]
+    fn the_centre_stays_canonical_after_a_tiny_step_west_of_the_seam() {
+        let mut camera = camera_at(CONFIG, grid(30, 20), 0.0, 8.0);
+        camera.pan_by_screen_offset(-1e-6, 0.0);
+        let x = camera.centre().x;
+        assert!((0.0..30.0).contains(&x), "{x}");
     }
 
     /// Catches zooming around the viewport centre instead of keeping the world
@@ -413,88 +512,50 @@ mod tests {
         assert_eq!(camera, state);
     }
 
-    /// Catches panning scaling with zoom in the wrong direction, failing to
-    /// clamp at world edges, or poisoning the camera with non-finite offsets.
-    #[test]
-    fn panning_by_screen_pixels_scales_with_zoom_and_clamps_to_world_bounds() {
-        let mut camera = test_camera();
-        // At 40 px/tile, +80 px east and -40 px north moves centre from (10, 8) to (12, 7).
-        camera.pan_by_screen_offset(80.0, -40.0);
-        assert_close(camera.centre().x, 12.0);
-        assert_close(camera.centre().y, 7.0);
-
-        camera.pan_by_screen_offset(f32::NAN, 10.0);
-        camera.pan_by_screen_offset(10.0, f32::INFINITY);
-        assert_close(camera.centre().x, 12.0);
-        assert_close(camera.centre().y, 7.0);
-
-        camera.pan_by_screen_offset(-100_000.0, 100_000.0);
-        assert_close(camera.centre().x, 0.0);
-        assert_close(camera.centre().y, 20.0);
-    }
-
     /// Catches off-by-one culling that drops partially visible edge tiles,
     /// includes tiles strictly outside an exact boundary, or draws into an
-    /// empty viewport.
+    /// empty viewport, and columns clamped at the seam instead of continuing
+    /// beyond it.
     #[test]
-    fn visible_tiles_include_partial_edge_tiles_and_clamp_to_the_grid() {
-        let camera = Camera::new(
-            CameraConfig {
-                initial_centre: WorldPoint::new(5.0, 4.0),
-                initial_pixels_per_tile: 40.0,
-                min_pixels_per_tile: 10.0,
-                max_pixels_per_tile: 160.0,
-            },
-            6,
-            5,
-        )
-        .expect("valid camera config");
+    fn visible_tiles_include_partial_edge_tiles_and_continue_across_the_seam() {
+        let camera = camera_at(CONFIG, grid(6, 5), 5.0, 4.0);
 
         // Viewport 240x160 at 40 px/tile spans exactly 6.0 x 4.0 tiles around (5.0, 4.0):
-        // x in [2.0, 8.0] -> overlaps tiles 2..=5 (clamped from 7 to world_width - 1 = 5).
-        // y in [2.0, 6.0] -> overlaps tiles 2..=4 (clamped from 5 to world_height - 1 = 4).
+        // x in [2.0, 8.0] -> overlaps tiles 2..=7, beyond the seam at 6.
+        // y in [2.0, 6.0] -> overlaps tiles 2..=4 (clamped from 5 to height - 1 = 4).
         assert_eq!(
             camera.visible_tiles(Viewport::new(240.0, 160.0)),
             Some(VisibleTileRange {
                 min_x: 2,
-                max_x: 5,
+                max_x: 7,
                 min_y: 2,
                 max_y: 4,
             })
         );
 
         // Partial edge tiles: 200x100 spans 5.0 x 2.5 tiles around (5.0, 4.0):
-        // x in [2.5, 7.5] -> min_x = 2, max_x = 5.
+        // x in [2.5, 7.5] -> min_x = 2, max_x = 7.
         // y in [2.75, 5.25] -> min_y = 2, max_y = 4.
         assert_eq!(
             camera.visible_tiles(Viewport::new(200.0, 100.0)),
             Some(VisibleTileRange {
                 min_x: 2,
-                max_x: 5,
+                max_x: 7,
                 min_y: 2,
                 max_y: 4,
             })
         );
 
-        // Exact boundary inside the grid: camera at (3.0, 2.0) on a 10x10 world,
-        // viewport 160x80 at 40 px/tile spans 4.0 x 2.0 tiles -> x in [1.0, 5.0], y in [1.0, 3.0].
-        // Tile 5 covers [5.0, 6.0] (outside), so visible tiles are 1..=4 and 1..=2.
-        let inner = Camera::new(
-            CameraConfig {
-                initial_centre: WorldPoint::new(3.0, 2.0),
-                initial_pixels_per_tile: 40.0,
-                min_pixels_per_tile: 10.0,
-                max_pixels_per_tile: 160.0,
-            },
-            10,
-            10,
-        )
-        .expect("valid camera config");
+        // Exact boundaries: camera at (1.0, 2.0) on a 10x10 world, viewport
+        // 160x80 at 40 px/tile spans 4.0 x 2.0 tiles -> x in [-1.0, 3.0], y in
+        // [1.0, 3.0]. Tile 3 covers [3.0, 4.0] (outside), so visible tiles are
+        // -1..=2 and 1..=2.
+        let inner = camera_at(CONFIG, grid(10, 10), 1.0, 2.0);
         assert_eq!(
             inner.visible_tiles(Viewport::new(160.0, 80.0)),
             Some(VisibleTileRange {
-                min_x: 1,
-                max_x: 4,
+                min_x: -1,
+                max_x: 2,
                 min_y: 1,
                 max_y: 2,
             })
@@ -508,17 +569,12 @@ mod tests {
     /// errors, or division by zero on minimized windows.
     #[test]
     fn gpu_uniform_maps_world_points_to_clip_space_and_snaps_to_physical_pixels() {
-        let camera = Camera::new(
-            CameraConfig {
-                initial_centre: WorldPoint::new(10.03, 8.0),
-                initial_pixels_per_tile: 10.0,
-                min_pixels_per_tile: 5.0,
-                max_pixels_per_tile: 160.0,
-            },
-            30,
-            20,
-        )
-        .expect("valid camera config");
+        let config = CameraConfig {
+            initial_pixels_per_tile: 10.0,
+            min_pixels_per_tile: 5.0,
+            max_pixels_per_tile: 160.0,
+        };
+        let camera = camera_at(config, grid(30, 20), 10.03, 8.0);
         let viewport = Viewport::new(800.0, 400.0);
 
         // At 10 logical px/tile and HiDPI scale_factor 2.0 -> 20 physical px/tile (0.05 tile steps).
@@ -547,24 +603,16 @@ mod tests {
     /// Catches invalid configs that would cause division by zero or NaNs.
     #[test]
     fn rejects_invalid_camera_configs() {
-        let valid = CameraConfig {
-            initial_centre: WorldPoint::new(0.0, 0.0),
-            initial_pixels_per_tile: 32.0,
-            min_pixels_per_tile: 8.0,
-            max_pixels_per_tile: 64.0,
-        };
-        assert_eq!(
-            Camera::new(valid, 0, 10),
-            Err(InvalidCameraConfig::EmptyWorld)
-        );
+        let grid = grid(10, 10);
+        let origin = WorldPoint::new(0.0, 0.0);
         assert_eq!(
             Camera::new(
                 CameraConfig {
                     min_pixels_per_tile: 0.0,
-                    ..valid
+                    ..CONFIG
                 },
-                10,
-                10,
+                grid,
+                origin,
             ),
             Err(InvalidCameraConfig::InvalidZoomBounds)
         );
@@ -573,12 +621,16 @@ mod tests {
                 CameraConfig {
                     min_pixels_per_tile: 64.0,
                     max_pixels_per_tile: 32.0,
-                    ..valid
+                    ..CONFIG
                 },
-                10,
-                10,
+                grid,
+                origin,
             ),
             Err(InvalidCameraConfig::InvalidZoomBounds)
+        );
+        assert_eq!(
+            Camera::new(CONFIG, grid, WorldPoint::new(f32::NAN, 0.0)),
+            Err(InvalidCameraConfig::NonFiniteCentre)
         );
     }
 }

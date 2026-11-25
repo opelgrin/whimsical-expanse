@@ -11,13 +11,12 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use expanse_app::camera_controls::CameraControlsConfig;
+use expanse_app::genesis::Genesis;
 use expanse_app::input::{Bindings, Button, InputAction, InputConfig, KeyCode, MouseButton};
 use expanse_app::pacer::{Speed, TickPacer};
 use expanse_app::window::{self, AppConfig};
-use expanse_core::grid::TilePos;
-use expanse_render::{CameraConfig, WorldPoint};
-use expanse_sim::{World, WorldConfig};
-use expanse_worldgen::generate_surface;
+use expanse_render::CameraConfig;
+use expanse_sim::WorldConfig;
 
 // Simulation defaults. The surface's size and generation parameters are in
 // `generation`.
@@ -49,33 +48,15 @@ fn main() -> ExitCode {
     };
 
     configure_thread_pool();
-    let surface = generate_surface(seed, &generation::surface_params(), &content::biome_table())
-        .expect("the default surface parameters are valid");
-    let config = WorldConfig {
-        seed,
-        ticks_per_step: TICKS_PER_STEP,
+    let genesis = Genesis {
+        world: WorldConfig {
+            seed,
+            ticks_per_step: TICKS_PER_STEP,
+        },
+        surface: generation::surface_params(),
+        biome_table: content::biome_table(),
     };
-    let world = match World::new(config, surface) {
-        Ok(world) => world,
-        Err(err) => {
-            report_error(&err.to_string());
-            return ExitCode::FAILURE;
-        }
-    };
-
     let pacer = TickPacer::new(BASE_TICKS_PER_SECOND, MAX_SIMULATION_LAG);
-
-    // The view opens on the wanderer, wherever the surface let it start.
-    let start = world
-        .snapshot()
-        .entities
-        .first()
-        .map_or(TilePos::new(0, 0), |entity| entity.motion.from);
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "tile coordinates of the default surface fit accurately in f32"
-    )]
-    let initial_centre = WorldPoint::new(start.x as f32 + 0.5, start.y as f32 + 0.5);
 
     let app_config = AppConfig {
         title: WINDOW_TITLE.to_owned(),
@@ -83,7 +64,6 @@ fn main() -> ExitCode {
         window_height: WINDOW_HEIGHT,
         initial_speed: Speed::Normal,
         camera: CameraConfig {
-            initial_centre,
             initial_pixels_per_tile: INITIAL_PIXELS_PER_TILE,
             min_pixels_per_tile: MIN_PIXELS_PER_TILE,
             max_pixels_per_tile: MAX_PIXELS_PER_TILE,
@@ -98,7 +78,7 @@ fn main() -> ExitCode {
         },
     };
 
-    if let Err(err) = window::run(world, pacer, app_config) {
+    if let Err(err) = window::run(genesis, pacer, app_config) {
         report_error(&err.to_string());
         return ExitCode::FAILURE;
     }

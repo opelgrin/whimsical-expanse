@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::camera::{Camera, CameraUniform, Viewport};
 use crate::interpolation::Interpolation;
-use crate::scene::{QuadInstance, build_instances};
+use crate::scene::{QuadInstance, TerrainStyle, build_instances};
 
 /// Errors that can prevent creating or running the renderer.
 #[derive(Debug)]
@@ -60,8 +60,7 @@ fn quad_instance_layout() -> wgpu::VertexBufferLayout<'static> {
 
 const INITIAL_INSTANCE_CAPACITY: usize = 1024;
 
-// Placeholder M0 palette in linear RGBA. Assumes an sRGB surface, which
-// `build_surface_config` prefers.
+// Linear RGBA. Assumes an sRGB surface, which `build_surface_config` prefers.
 const BACKGROUND_CLEAR: wgpu::Color = wgpu::Color {
     r: 0.025,
     g: 0.032,
@@ -173,8 +172,9 @@ impl<'window> Renderer<'window> {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    /// Draws the tiles of the world visible through `camera` and `viewport`,
-    /// then the entities where `interpolation` places them, then `ui` on top.
+    /// Draws the tiles of the world visible through `camera` and `viewport`
+    /// in `terrain`'s style, then the entities where `interpolation` places
+    /// them, then `ui` on top.
     /// Draws nothing for an empty viewport, but still applies the texture
     /// changes of `ui`.
     ///
@@ -189,6 +189,7 @@ impl<'window> Renderer<'window> {
         viewport: Viewport,
         scale_factor: f32,
         interpolation: &Interpolation<'_>,
+        terrain: &TerrainStyle<'_>,
         ui: &UiFrame<'_>,
     ) -> Result<(), RenderError> {
         for (id, deltas) in &ui.textures_delta.set {
@@ -197,7 +198,7 @@ impl<'window> Renderer<'window> {
                     .update_texture(&self.device, &self.queue, *id, delta);
             }
         }
-        let result = self.draw(camera, viewport, scale_factor, interpolation, ui);
+        let result = self.draw(camera, viewport, scale_factor, interpolation, terrain, ui);
         // Freed only after the frame that may still use them is submitted.
         for id in &ui.textures_delta.free {
             self.ui_painter.free_texture(id);
@@ -211,6 +212,7 @@ impl<'window> Renderer<'window> {
         viewport: Viewport,
         scale_factor: f32,
         interpolation: &Interpolation<'_>,
+        terrain: &TerrainStyle<'_>,
         ui: &UiFrame<'_>,
     ) -> Result<(), RenderError> {
         if viewport.width <= 0.0 || viewport.height <= 0.0 {
@@ -236,7 +238,13 @@ impl<'window> Renderer<'window> {
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 
-        build_instances(&mut self.instances, camera, viewport, interpolation);
+        build_instances(
+            &mut self.instances,
+            camera,
+            viewport,
+            interpolation,
+            terrain,
+        );
         if !self.instances.is_empty() {
             self.ensure_instance_capacity(self.instances.len());
             self.queue.write_buffer(

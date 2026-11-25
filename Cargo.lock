@@ -614,6 +614,7 @@ dependencies = [
  "expanse-render",
  "expanse-sim",
  "expanse-terrain",
+ "expanse-worldgen",
  "winit",
 ]
 

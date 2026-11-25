@@ -4,9 +4,12 @@
 
 pub mod camera;
 mod interpolation;
+mod palette;
 pub mod renderer;
 mod scene;
 
 pub use camera::{Camera, CameraConfig, InvalidCameraConfig, ScreenPoint, Viewport, WorldPoint};
 pub use interpolation::Interpolation;
+pub use palette::{MapPalette, TerrainView};
 pub use renderer::{RenderError, Renderer, UiFrame};
+pub use scene::{TerrainDisplay, TerrainStyle};
