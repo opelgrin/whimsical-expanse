@@ -8,7 +8,7 @@
 use std::error::Error;
 use std::fmt;
 
-use expanse_terrain::{CHUNK_SIZE, HIGHEST_CELSIUS, LOWEST_CELSIUS};
+use expanse_terrain::{HIGHEST_CELSIUS, LOWEST_CELSIUS, Terrain};
 
 /// Everything the surface is generated from, apart from the game's seed.
 #[derive(Debug, Clone, PartialEq)]
@@ -122,11 +122,12 @@ impl SurfaceParams {
         if !(0.0..=1.0).contains(&self.water_share) {
             return fail("water_share", "must be between 0 and 1");
         }
-        let width_tiles = u32::from(self.width_chunks) * CHUNK_SIZE.unsigned_abs();
-        let tile_count = u64::from(width_tiles)
-            * u64::from(self.height_chunks)
-            * u64::from(CHUNK_SIZE.unsigned_abs());
-        if self.min_region_tiles == 0 || u64::from(self.min_region_tiles) > tile_count {
+        let grid = Terrain::grid_for(self.width_chunks, self.height_chunks)
+            .expect("both sizes are at least 1");
+        let width_tiles = grid.width().unsigned_abs();
+        let tile_count = grid.tile_count();
+        let min_region_tiles = usize::try_from(self.min_region_tiles).expect("u32 fits in usize");
+        if min_region_tiles == 0 || min_region_tiles > tile_count {
             return fail(
                 "min_region_tiles",
                 "must be at least 1 and at most the number of tiles",

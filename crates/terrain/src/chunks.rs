@@ -12,8 +12,8 @@ use crate::tile::{ObstacleCell, ObstacleIndex, Tile};
 
 /// The width and height of a chunk, in tiles.
 ///
-/// A power of two. Nothing yet argues for another size than 32; the renderer
-/// may.
+/// A power of two. Chunks are a storage unit, so storage, level of detail and
+/// navigation regions are what could argue for another size than 32.
 pub const CHUNK_SIZE: i32 = 32;
 
 /// A chunk, by its column and row of chunks. Chunk `(0, 0)` holds the tiles
@@ -64,6 +64,16 @@ pub struct Terrain {
 }
 
 impl Terrain {
+    /// The grid of a terrain `world_width_chunks` by `world_height_chunks`
+    /// chunks, or `None` if it would have no tiles.
+    #[must_use]
+    pub fn grid_for(world_width_chunks: u16, world_height_chunks: u16) -> Option<Grid> {
+        Grid::new(
+            i32::from(world_width_chunks) * CHUNK_SIZE,
+            i32::from(world_height_chunks) * CHUNK_SIZE,
+        )
+    }
+
     /// A terrain of `world_width_chunks` by `world_height_chunks` chunks, or `None` if it
     /// would have no tiles.
     ///
@@ -75,12 +85,9 @@ impl Terrain {
         world_height_chunks: u16,
         fill: impl Fn(TilePos) -> Tile + Sync,
     ) -> Option<Self> {
+        let grid = Self::grid_for(world_width_chunks, world_height_chunks)?;
         let world_width_chunks = i32::from(world_width_chunks);
         let world_height_chunks = i32::from(world_height_chunks);
-        let grid = Grid::new(
-            world_width_chunks * CHUNK_SIZE,
-            world_height_chunks * CHUNK_SIZE,
-        )?;
         let chunks = (0..world_height_chunks)
             .into_par_iter()
             .flat_map_iter(|y| (0..world_width_chunks).map(move |x| ChunkPos { x, y }))
@@ -284,6 +291,8 @@ mod tests {
             (grid.width(), grid.height()),
             (3 * CHUNK_SIZE, 2 * CHUNK_SIZE)
         );
+        assert_eq!(Terrain::grid_for(3, 2), Some(grid));
+        assert_eq!(Terrain::grid_for(0, 1), None);
         for x in (-2 * grid.width()..3 * grid.width()).step_by(3) {
             for y in -1..=grid.height() {
                 let tile = TilePos::new(x, y);
