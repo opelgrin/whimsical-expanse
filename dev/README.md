@@ -18,6 +18,7 @@ which can be read without the code.
 | Where are we right now? | [STATUS.md](STATUS.md) |
 | What does the current milestone's work involve? | its spec in [specs/](specs/) |
 | What facts have we checked, such as how the asset pack is built? | [findings/](findings/) |
+| How do we create new pixel-art assets that match the pack? | [ART.md](ART.md) |
 | How do we write Rust here? | [STYLE.md](STYLE.md) |
 | How do we test? | [TESTING.md](TESTING.md) |
 | How do we run the checks and other commands? | the [justfile](../justfile); `just` lists the recipes |
