@@ -76,6 +76,7 @@ seasons change, with placeholder art or, locally, the real pack.
 - Two-level navigation with obstacles and the wrap.
 - Vision cones with occlusion, and bounded memory of facts.
 - The player character as an actor, with "go there" orders.
+- The first actors replace the stand-in wanderer, and its tests become theirs.
 
 **Exit:** actors wander, see and remember, and debug views show their cones and
 memories. You can send your character somewhere.

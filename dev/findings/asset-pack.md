@@ -47,8 +47,32 @@ its neighbours. Each transition is a block of 12×4 tiles. In the grass, grass
 over water, path, tilled soil, water, cave water, frozen water and beach sheets,
 every complete block holds the 47 shapes of the scheme and one empty tile
 (checked by comparing the pixels of the 48 tiles of each block). In an inverted
-block, described below, the full shape is itself empty. The order of the tiles
-inside a block is not mapped yet.
+block, described below, the full shape is itself empty.
+
+**Every block puts the shapes in the same order** (mapped 2026-11-26). Each
+slot holds the shape for one 8-neighbour mask, with bits N = 1, NE = 2, E = 4,
+SE = 8, S = 16, SW = 32, W = 64 and NW = 128, where a corner counts only when
+both of its edges are present. The slots, as they lie in the block (`-` is the
+empty tile):
+
+```text
+ 16  20  84  80 213  92 116  87  28 125 124 112
+ 17  21  85  81  29 127 253 113  31 119   - 245
+  1   5  69  65  23 223 247 209  95 255 221 241
+  0   4  68  64 117  71 197  93   7 199 215 193
+```
+
+The first four columns are the 16 shapes without inner corners. Checked by
+reading each slot's mask from its transparency (a side is present when the
+tile's outermost pixels on that side are all opaque, a corner when its pixel
+is): all 47 shapes, in this order, in 48 blocks of the grass sheets of every
+season and of deep forest, grass over water, cave grass, the second winter
+grass sheet and the beach. The four blocks in a row of a grass over water
+sheet differ only in the shore's pixels; one of them reads a few corners as
+filled because a shore pixel lies on the corner. Path, water, cave water,
+frozen water, tilled soil and dungeon blocks draw their shapes in colour, not
+transparency: they have the same arrangement and empty slot by eye, not
+checked pixel by pixel. Inverted blocks were not checked.
 
 **Terrain is drawn in layers.** A lower terrain (water, dirt, sand, a dark
 void) fills the tile. A higher terrain (grass) is drawn over it as a blob tile,
