@@ -1,6 +1,9 @@
 # Rust build output
 /target/
 
+# Cooked assets: `just cook` writes them, and they may hold licensed art
+/cooked/
+
 # cargo-mutants output
 mutants.out*/
 mutants.diff

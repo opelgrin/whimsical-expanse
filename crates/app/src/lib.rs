@@ -4,6 +4,7 @@
 //! real time, runs the world on its own thread, and connects window input to
 //! presentation and the debug overlay.
 
+pub mod assets;
 pub mod camera_controls;
 pub mod genesis;
 pub mod input;

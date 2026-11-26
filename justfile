@@ -12,8 +12,12 @@ default:
 build:
     cargo build --workspace
 
-# Run the game window, e.g. `just game --seed 1`
-game *args:
+# Cook the assets into the container the game loads
+cook:
+    cargo run --release --locked -q -p expanse-cook -- --out cooked/assets.bin
+
+# Cook the assets, then run the game window, e.g. `just game --seed 1`
+game *args: cook
     cargo run --release --locked -p expanse-game -- {{args}}
 
 # Run the headless simulation, e.g. `just headless --seed 1 --ticks 100000`

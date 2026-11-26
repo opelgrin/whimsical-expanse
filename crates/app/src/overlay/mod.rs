@@ -4,6 +4,7 @@
 //! and returns what the developer asked for, which the window then applies.
 //! Each panel is in its own module.
 
+mod atlas;
 mod generation;
 mod inspector;
 mod speed;
@@ -18,6 +19,7 @@ use expanse_terrain::BiomeTable;
 use winit::event::WindowEvent;
 use winit::window::Window;
 
+pub use atlas::AssetReading;
 pub use generation::GenerationSettings;
 
 use crate::inspector::TileReport;
@@ -43,6 +45,8 @@ pub struct OverlayStatus<'a> {
     pub biome_table: &'a BiomeTable,
     /// Why the last regeneration failed, if it did.
     pub generation_error: Option<&'a str>,
+    /// What art the game loaded.
+    pub assets: AssetReading<'a>,
 }
 
 /// A change the developer asked for through the overlay.
@@ -90,6 +94,7 @@ pub struct DebugOverlay {
     average_frame_seconds: Option<f32>,
     /// The settings being edited for the next world.
     generation: GenerationSettings,
+    atlas_viewer: atlas::AtlasViewer,
 }
 
 impl DebugOverlay {
@@ -116,6 +121,7 @@ impl DebugOverlay {
             window_input,
             average_frame_seconds: None,
             generation,
+            atlas_viewer: atlas::AtlasViewer::default(),
         }
     }
 
@@ -145,6 +151,7 @@ impl DebugOverlay {
         let visible = self.visible;
         let average_frame_seconds = self.average_frame_seconds;
         let generation = &mut self.generation;
+        let atlas_viewer = &mut self.atlas_viewer;
         let mut requests = Vec::new();
         let output = self.context.run_pass(raw_input, |context| {
             // `egui` may run a pass again and discard the first one, so only
@@ -156,6 +163,7 @@ impl DebugOverlay {
                     status,
                     average_frame_seconds,
                     generation,
+                    atlas_viewer,
                     &mut requests,
                 );
             }
@@ -190,8 +198,10 @@ fn show(
     status: OverlayStatus<'_>,
     average_frame_seconds: Option<f32>,
     generation: &mut GenerationSettings,
+    atlas_viewer: &mut atlas::AtlasViewer,
     requests: &mut Vec<OverlayRequest>,
 ) {
+    atlas::show_window(context, atlas_viewer, status.assets);
     egui::Window::new("Debug")
         .anchor(Align2::LEFT_TOP, [8.0, 8.0])
         .resizable(false)
@@ -213,5 +223,7 @@ fn show(
             inspector::show(ui, status.inspected, status.biome_table);
             ui.separator();
             generation::show(ui, generation, status.generation_error, requests);
+            ui.separator();
+            atlas::show_summary(ui, atlas_viewer, status.assets);
         });
 }

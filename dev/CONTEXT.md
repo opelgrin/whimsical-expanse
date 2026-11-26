@@ -45,6 +45,35 @@ its position, chunk, fields, biome and obstacle.
 seed or other generation parameters. A development action, not a player
 command.
 
+## Assets
+
+**Logical asset ID**: the name by which content says what something looks
+like, never which file the art is in. There are two kinds, grounds and
+sprites.
+
+**Ground**: a kind of land as it is drawn, in blob tiles: what a biome's land
+looks like. Several biomes may share one. Not the terrain.
+
+**Sprite**: one image drawn at an anchor tile, such as an obstacle's or an
+entity's. Its image may reach beyond that tile.
+
+**Drawing order**: the grounds from the lowest to the highest. Where two
+grounds meet, the edge is drawn on the higher one. Unrelated to the biome
+table's priority.
+
+**Blob tile**: one of the 47 shapes a ground takes from which of its 8
+neighbours share it. A **blob block** holds them in 12×4 slots.
+
+**Placeholder**: the art that every logical ID has in the repository, drawn
+by `cook` from a **recipe**, so the game runs without the licensed pack.
+
+**Source asset**: the art of one logical ID in memory, whatever source it came
+from: placeholders, the pack or our own art.
+
+**Cooking**: building the **container** from source assets: the **atlases**,
+images that hold many tiles and sprites, and the region of each logical ID in
+them. The game only ever loads a container.
+
 ## Spaces and terrain
 
 **World**: the whole simulation state at one tick: every space, what lives in

@@ -3,6 +3,7 @@
 //! The surface is small and has its own parameters, so that generation stays
 //! a small part of the time these tests take.
 
+use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::grid::TileOffset;
 use expanse_sim::{World, WorldConfig};
 use expanse_terrain::{
@@ -60,6 +61,7 @@ fn surface(seed: u64) -> Terrain {
                     ..FieldRanges::default()
                 },
                 map_colour: [0, 0, 255],
+                ground: GroundId::new("water").expect("a valid name"),
                 impassable: true,
                 obstacles: Vec::new(),
             },
@@ -67,6 +69,7 @@ fn surface(seed: u64) -> Terrain {
                 name: "land".to_owned(),
                 ranges: FieldRanges::default(),
                 map_colour: [0, 255, 0],
+                ground: GroundId::new("land").expect("a valid name"),
                 impassable: false,
                 obstacles: obstacles("log", 0.1),
             },
@@ -74,6 +77,7 @@ fn surface(seed: u64) -> Terrain {
         vec![ObstacleKindDefinition {
             name: "log".to_owned(),
             footprint: vec![TileOffset::new(1, 0)],
+            sprite: SpriteId::new("log").expect("a valid name"),
         }],
     )
     .expect("a valid table");

@@ -96,6 +96,23 @@ pub struct Renderer<'window> {
     instance_capacity: usize,
     instances: Vec<QuadInstance>,
     ui_painter: egui_wgpu::Renderer,
+    atlases: Vec<Atlas>,
+}
+
+/// An atlas page on the GPU.
+struct Atlas {
+    /// Kept so that the texture lives as long as the renderer.
+    _texture: wgpu::Texture,
+    shown: AtlasTexture,
+}
+
+/// An atlas page, as the UI can show it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AtlasTexture {
+    /// The texture, registered with the UI.
+    pub texture_id: egui::TextureId,
+    /// The width and height in pixels.
+    pub size: [u32; 2],
 }
 
 impl<'window> Renderer<'window> {
@@ -157,7 +174,63 @@ impl<'window> Renderer<'window> {
             instance_capacity: INITIAL_INSTANCE_CAPACITY,
             instances: Vec::with_capacity(INITIAL_INSTANCE_CAPACITY),
             ui_painter,
+            atlases: Vec::new(),
         })
+    }
+
+    /// Uploads the atlas pages of `container`, replacing any uploaded before,
+    /// and registers them with the UI.
+    pub fn upload_atlases(&mut self, container: &expanse_cook::Container) {
+        for atlas in self.atlases.drain(..) {
+            self.ui_painter.free_texture(&atlas.shown.texture_id);
+        }
+        for (index, page) in container.atlases().iter().enumerate() {
+            let size = wgpu::Extent3d {
+                width: page.width(),
+                height: page.height(),
+                depth_or_array_layers: 1,
+            };
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(&format!("atlas {index}")),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let bytes: Vec<u8> = page.pixels().iter().flatten().copied().collect();
+            self.queue.write_texture(
+                texture.as_image_copy(),
+                &bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * page.width()),
+                    rows_per_image: None,
+                },
+                size,
+            );
+            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            let texture_id = self.ui_painter.register_native_texture(
+                &self.device,
+                &view,
+                wgpu::FilterMode::Nearest,
+            );
+            self.atlases.push(Atlas {
+                _texture: texture,
+                shown: AtlasTexture {
+                    texture_id,
+                    size: [page.width(), page.height()],
+                },
+            });
+        }
+    }
+
+    /// The atlas pages uploaded, as the UI can show them.
+    #[must_use]
+    pub fn atlas_textures(&self) -> Vec<AtlasTexture> {
+        self.atlases.iter().map(|atlas| atlas.shown).collect()
     }
 
     /// Reconfigures the swapchain when the window's physical size changes.

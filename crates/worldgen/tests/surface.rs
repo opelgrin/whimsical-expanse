@@ -4,6 +4,7 @@
 //! proportions and no values at a fixed seed, so that tuning the generator
 //! never breaks them.
 
+use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::grid::{TileOffset, TilePos};
 use expanse_core::region::Regions;
 use expanse_terrain::{
@@ -67,6 +68,7 @@ fn biome(
         name: name.to_owned(),
         ranges,
         map_colour: [0, 0, 0],
+        ground: GroundId::new(name).expect("a valid name"),
         impassable,
         obstacles: obstacles
             .iter()
@@ -91,6 +93,7 @@ fn table() -> BiomeTable {
             .iter()
             .map(|&(dx, dy)| TileOffset::new(dx, dy))
             .collect(),
+        sprite: SpriteId::new(name).expect("a valid name"),
     };
     BiomeTable::new(
         vec![
