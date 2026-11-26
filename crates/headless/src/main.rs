@@ -8,6 +8,7 @@
 
 use std::process::ExitCode;
 
+use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::grid::TileOffset;
 use expanse_sim::{World, WorldConfig};
 use expanse_terrain::{
@@ -89,6 +90,7 @@ fn biome_table() -> BiomeTable {
         name: name.to_owned(),
         ranges,
         map_colour: [0, 0, 0],
+        ground: GroundId::new(name).expect("a valid name"),
         impassable,
         obstacles: obstacles
             .iter()
@@ -102,6 +104,7 @@ fn biome_table() -> BiomeTable {
     let kind = |name: &str, footprint: Vec<TileOffset>| ObstacleKindDefinition {
         name: name.to_owned(),
         footprint,
+        sprite: SpriteId::new(name).expect("a valid name"),
     };
     BiomeTable::new(
         vec![

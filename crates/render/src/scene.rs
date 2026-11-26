@@ -152,6 +152,7 @@ fn repeats(x: f32, width: f32, visible: VisibleTileRange) -> impl Iterator<Item 
 
 #[cfg(test)]
 mod tests {
+    use expanse_core::asset::GroundId;
     use expanse_core::time::Tick;
     use expanse_sim::{EntityId, EntityView, Motion, Snapshot};
     use expanse_terrain::{
@@ -168,6 +169,7 @@ mod tests {
             name: name.to_owned(),
             ranges,
             map_colour,
+            ground: GroundId::new(name).expect("a valid name"),
             impassable: false,
             obstacles: Vec::new(),
         };

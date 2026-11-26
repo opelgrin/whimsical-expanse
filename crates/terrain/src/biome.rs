@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt;
 use std::ops::Range;
 
+use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::grid::TileOffset;
 
 use crate::field::{Field, Fields};
@@ -24,6 +25,8 @@ pub struct BiomeDefinition {
     pub ranges: FieldRanges,
     /// The biome's colour on maps, in sRGB.
     pub map_colour: [u8; 3],
+    /// What the biome's ground looks like.
+    pub ground: GroundId,
     /// Whether the biome blocks movement, as water does.
     pub impassable: bool,
     /// The obstacles placed in the biome.
@@ -88,6 +91,8 @@ pub struct ObstacleKindDefinition {
     /// The tiles the obstacle blocks besides its anchor, as offsets from the
     /// anchor. Empty for an obstacle of one tile.
     pub footprint: Vec<TileOffset>,
+    /// What the obstacle looks like.
+    pub sprite: SpriteId,
 }
 
 /// The biomes, in order, and the obstacle kinds they place.
@@ -108,6 +113,7 @@ pub struct Biome {
     /// from the start included to the end excluded.
     ranges: [Option<Range<u32>>; Field::ALL.len()],
     map_colour: [u8; 3],
+    ground: GroundId,
     impassable: bool,
     obstacles: Vec<BiomeObstacle>,
 }
@@ -123,6 +129,12 @@ impl Biome {
     #[must_use]
     pub const fn map_colour(&self) -> [u8; 3] {
         self.map_colour
+    }
+
+    /// What the biome's ground looks like.
+    #[must_use]
+    pub const fn ground(&self) -> &GroundId {
+        &self.ground
     }
 
     /// Whether the biome blocks movement.
@@ -165,6 +177,7 @@ pub struct BiomeObstacle {
 pub struct ObstacleKind {
     name: String,
     footprint: Footprint,
+    sprite: SpriteId,
 }
 
 impl ObstacleKind {
@@ -178,6 +191,12 @@ impl ObstacleKind {
     #[must_use]
     pub const fn footprint(&self) -> &Footprint {
         &self.footprint
+    }
+
+    /// What the obstacle looks like.
+    #[must_use]
+    pub const fn sprite(&self) -> &SpriteId {
+        &self.sprite
     }
 }
 
@@ -288,6 +307,7 @@ fn check_obstacle_kinds(
         kinds.push(ObstacleKind {
             name: definition.name,
             footprint,
+            sprite: definition.sprite,
         });
     }
     Ok(kinds)
@@ -347,6 +367,7 @@ fn check_biome(
         name,
         ranges,
         map_colour: definition.map_colour,
+        ground: definition.ground,
         impassable: definition.impassable,
         obstacles,
     })
@@ -445,6 +466,7 @@ mod tests {
             name: name.to_owned(),
             ranges,
             map_colour: [0, 0, 0],
+            ground: GroundId::new("ground").expect("a valid name"),
             impassable: false,
             obstacles: Vec::new(),
         }
@@ -521,6 +543,7 @@ mod tests {
         let rock = || ObstacleKindDefinition {
             name: "rock".to_owned(),
             footprint: Vec::new(),
+            sprite: SpriteId::new("rock").expect("a valid name"),
         };
         let with_obstacle = |density, variation| BiomeDefinition {
             obstacles: vec![BiomeObstacleDefinition {

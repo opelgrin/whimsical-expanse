@@ -27,6 +27,9 @@ The commands are in the [justfile](justfile). Run `just` to list them. Each one
 is a plain cargo command, so the file also works as a reference without `just`,
 which is [installed separately](https://just.systems/man/en/packages.html).
 
+The game draws cooked assets. `just game` cooks them first; without `just`,
+run the `cook` recipe's command before the game's.
+
 For what the checks expect, see the [testing principles](dev/TESTING.md) and the
 [style guide](dev/STYLE.md).
 

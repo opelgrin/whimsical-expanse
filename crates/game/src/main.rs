@@ -7,15 +7,17 @@ mod content;
 mod generation;
 
 use std::num::NonZero;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
+use expanse_app::assets::load_assets;
 use expanse_app::camera_controls::CameraControlsConfig;
 use expanse_app::genesis::Genesis;
 use expanse_app::input::{Bindings, Button, InputAction, InputConfig, KeyCode, MouseButton};
 use expanse_app::pacer::{Speed, TickPacer};
 use expanse_app::window::{self, AppConfig};
-use expanse_render::CameraConfig;
+use expanse_render::{AssetContent, CameraConfig};
 use expanse_sim::WorldConfig;
 
 // Simulation defaults. The surface's size and generation parameters are in
@@ -25,8 +27,13 @@ const TICKS_PER_STEP: u64 = 10;
 const BASE_TICKS_PER_SECOND: u32 = 20;
 const MAX_SIMULATION_LAG: Duration = Duration::from_millis(250);
 
-// Window and camera defaults. The pixels-per-tile values are multiples of 16 px,
-// the assumed base tile size; no document fixes that size yet.
+/// Where `just cook` writes the cooked assets, relative to the repository
+/// root, from which `just game` runs. Where a shipped game keeps them is
+/// decided with packaging.
+const DEFAULT_ASSETS: &str = "cooked/assets.bin";
+
+// Window and camera defaults. The pixels-per-tile values are multiples of the
+// 16 px tile. The smallest zoom is for development: the game's will be larger.
 const WINDOW_TITLE: &str = "Whimsical Expanse";
 const WINDOW_WIDTH: f64 = 1280.0;
 const WINDOW_HEIGHT: f64 = 720.0;
@@ -38,8 +45,8 @@ const ZOOM_STEP_FACTOR: f32 = 1.15;
 const PIXELS_PER_SCROLL_LINE: f32 = 40.0;
 
 fn main() -> ExitCode {
-    let seed = match parse_seed(std::env::args().skip(1)) {
-        Ok(seed) => seed,
+    let args = match parse_args(std::env::args().skip(1)) {
+        Ok(args) => args,
         Err(message) => {
             report_error(&message);
             report_usage();
@@ -50,11 +57,22 @@ fn main() -> ExitCode {
     configure_thread_pool();
     let genesis = Genesis {
         world: WorldConfig {
-            seed,
+            seed: args.seed,
             ticks_per_step: TICKS_PER_STEP,
         },
         surface: generation::surface_params(),
         biome_table: content::biome_table(),
+    };
+    let asset_content = AssetContent {
+        drawing_order: content::drawing_order(),
+        wanderer_sprite: content::wanderer_sprite(),
+    };
+    let assets = match load_assets(&args.assets, &genesis.biome_table, &asset_content) {
+        Ok(assets) => assets,
+        Err(err) => {
+            report_error(&err.to_string());
+            return ExitCode::FAILURE;
+        }
     };
     let pacer = TickPacer::new(BASE_TICKS_PER_SECOND, MAX_SIMULATION_LAG);
 
@@ -78,7 +96,7 @@ fn main() -> ExitCode {
         },
     };
 
-    if let Err(err) = window::run(genesis, pacer, app_config) {
+    if let Err(err) = window::run(genesis, assets, pacer, app_config) {
         report_error(&err.to_string());
         return ExitCode::FAILURE;
     }
@@ -116,22 +134,32 @@ fn default_bindings() -> Bindings {
         .with(Button::Key(KeyCode::F3), InputAction::ToggleOverlay)
 }
 
-fn parse_seed(mut args: impl Iterator<Item = String>) -> Result<u64, String> {
-    let mut seed = DEFAULT_SEED;
+/// What the command line chose.
+struct Args {
+    seed: u64,
+    /// The cooked assets to load.
+    assets: PathBuf,
+}
+
+fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
+    let mut parsed = Args {
+        seed: DEFAULT_SEED,
+        assets: PathBuf::from(DEFAULT_ASSETS),
+    };
     while let Some(flag) = args.next() {
+        let mut value = || args.next().ok_or_else(|| format!("`{flag}` needs a value"));
         match flag.as_str() {
             "--seed" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| "`--seed` needs a value".to_owned())?;
-                seed = value
+                let value = value()?;
+                parsed.seed = value
                     .parse()
                     .map_err(|_| format!("`--seed` expects a whole number, got `{value}`"))?;
             }
+            "--assets" => parsed.assets = PathBuf::from(value()?),
             _ => return Err(format!("unknown argument `{flag}`")),
         }
     }
-    Ok(seed)
+    Ok(parsed)
 }
 
 #[expect(clippy::print_stderr, reason = "CLI and startup errors go to stderr")]
@@ -141,5 +169,5 @@ fn report_error(message: &str) {
 
 #[expect(clippy::print_stderr, reason = "usage help goes to stderr")]
 fn report_usage() {
-    eprintln!("usage: expanse-game [--seed N]");
+    eprintln!("usage: expanse-game [--seed N] [--assets PATH]");
 }

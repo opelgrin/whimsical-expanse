@@ -1,0 +1,15 @@
+[package]
+name = "expanse-cook"
+description = "Asset cooking: from placeholder recipes, and later the licensed pack, to the container the game loads."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+expanse-core = { path = "../../crates/core" }
+
+[lints]
+workspace = true

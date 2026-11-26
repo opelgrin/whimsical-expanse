@@ -1,10 +1,12 @@
 //! Stand-in: replaced by content files when the `content` crate exists.
 //!
-//! The default biome table and obstacle kinds.
+//! The default biome table and obstacle kinds, and the logical asset IDs
+//! that presentation needs beyond them.
 //!
 //! The table is not limited to what the asset pack can show: biomes without
 //! art show their placeholder. It is tuned by looking at generated worlds.
 
+use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::grid::TileOffset;
 use expanse_terrain::{
     BiomeDefinition, BiomeObstacleDefinition, BiomeTable, FieldRanges, ObstacleKindDefinition,
@@ -23,6 +25,7 @@ fn obstacle_kinds() -> Vec<ObstacleKindDefinition> {
             .iter()
             .map(|&(dx, dy)| TileOffset::new(dx, dy))
             .collect(),
+        sprite: SpriteId::new(name).expect("default sprite names are valid"),
     };
     vec![
         kind("rock", &[]),
@@ -67,6 +70,7 @@ fn biome(
         name: name.to_owned(),
         ranges,
         map_colour,
+        ground: GroundId::new(name).expect("default ground names are valid"),
         impassable: false,
         obstacles,
     }
@@ -239,4 +243,35 @@ fn biomes() -> Vec<BiomeDefinition> {
             ],
         ),
     ]
+}
+
+/// The grounds in drawing order, from the lowest to the highest: where two
+/// grounds meet, the edge is drawn on the higher one.
+pub fn drawing_order() -> Vec<GroundId> {
+    [
+        "deep_water",
+        "shallow_water",
+        "desert",
+        "steppe",
+        "savanna",
+        "tundra",
+        "grassland",
+        "boreal_shrubland",
+        "temperate_forest",
+        "taiga",
+        "rainforest",
+        "highlands",
+        "ice_sheet",
+        "peaks",
+    ]
+    .into_iter()
+    .map(|name| GroundId::new(name).expect("default ground names are valid"))
+    .collect()
+}
+
+/// Stand-in: replaced by the species content of the first actors in M2.
+///
+/// The sprite of the wandering placeholder entity.
+pub fn wanderer_sprite() -> SpriteId {
+    SpriteId::new("wanderer").expect("a valid name")
 }

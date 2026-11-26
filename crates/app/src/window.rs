@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 use expanse_core::grid::TilePos;
 use expanse_render::{
-    Camera, CameraConfig, Interpolation, InvalidCameraConfig, MapPalette, RenderError, Renderer,
-    ScreenPoint, TerrainDisplay, TerrainStyle, TerrainView, Viewport, WorldPoint,
+    Assets, AtlasTexture, Camera, CameraConfig, Interpolation, InvalidCameraConfig, MapPalette,
+    RenderError, Renderer, ScreenPoint, TerrainDisplay, TerrainStyle, TerrainView, Viewport,
+    WorldPoint,
 };
 use expanse_sim::{World, WorldConfig};
 use winit::application::ApplicationHandler;
@@ -23,7 +24,9 @@ use crate::camera_controls::{CameraControls, CameraControlsConfig};
 use crate::genesis::{Genesis, GenesisError};
 use crate::input::{Button, InputAction, InputConfig, InputEvent, InputState, ScrollAmount};
 use crate::inspector::inspect;
-use crate::overlay::{DebugOverlay, GenerationSettings, OverlayRequest, OverlayStatus};
+use crate::overlay::{
+    AssetReading, DebugOverlay, GenerationSettings, OverlayRequest, OverlayStatus,
+};
 use crate::pacer::{Speed, TickPacer};
 use crate::simulation_thread::SimulationHandle;
 
@@ -87,14 +90,20 @@ impl Error for AppError {
 
 /// Creates a world from `genesis`, opens the game window, spawns the
 /// simulation thread, and runs until the window is closed or a fatal error
-/// stops it. The debug overlay can start new worlds from other settings.
+/// stops it. The world is drawn with `assets`. The debug overlay can start
+/// new worlds from other settings.
 ///
 /// # Errors
 ///
 /// Returns [`AppError`] if the world cannot be created, the camera
 /// configuration is invalid, the window or event loop cannot be created, or
 /// GPU initialization/presentation fails.
-pub fn run(genesis: Genesis, pacer: TickPacer, config: AppConfig) -> Result<(), AppError> {
+pub fn run(
+    genesis: Genesis,
+    assets: Assets,
+    pacer: TickPacer,
+    config: AppConfig,
+) -> Result<(), AppError> {
     let world = genesis.create_world().map_err(AppError::Genesis)?;
     let camera = camera_for_world(&world, config.camera)?;
     let event_loop = EventLoop::new().map_err(AppError::EventLoop)?;
@@ -103,6 +112,7 @@ pub fn run(genesis: Genesis, pacer: TickPacer, config: AppConfig) -> Result<(), 
     let mut app = App {
         palette: MapPalette::new(&genesis.biome_table),
         genesis,
+        assets,
         pacer,
         display: TerrainDisplay {
             view: TerrainView::Biomes,
@@ -153,6 +163,8 @@ struct Graphics {
     window: Arc<Window>,
     renderer: Renderer<'static>,
     overlay: DebugOverlay,
+    /// The atlas pages, uploaded with the renderer.
+    atlases: Vec<AtlasTexture>,
 }
 
 /// The selected simulation speed, and the speed that ending a pause resumes.
@@ -196,6 +208,8 @@ impl SpeedSelection {
 struct App {
     /// What the running world was created from.
     genesis: Genesis,
+    /// The art the world is drawn with.
+    assets: Assets,
     /// The pacer each new simulation starts with.
     pacer: TickPacer,
     palette: MapPalette,
@@ -343,6 +357,11 @@ impl App {
                 inspected: inspected.as_ref(),
                 biome_table: &self.genesis.biome_table,
                 generation_error: self.generation_error.as_deref(),
+                assets: AssetReading {
+                    atlases: &graphics.atlases,
+                    ground_count: self.assets.container().grounds().len(),
+                    sprite_count: self.assets.container().sprites().len(),
+                },
             },
         );
         let interpolation = Interpolation {
@@ -391,7 +410,7 @@ impl ApplicationHandler for App {
             }
         };
         let physical = window.inner_size();
-        let renderer = match Renderer::new(
+        let mut renderer = match Renderer::new(
             event_loop.owned_display_handle(),
             Arc::clone(&window),
             physical.width,
@@ -404,6 +423,8 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        renderer.upload_atlases(self.assets.container());
+        let atlases = renderer.atlas_textures();
         self.last_frame = now();
         window.request_redraw();
         let overlay = DebugOverlay::new(
@@ -417,6 +438,7 @@ impl ApplicationHandler for App {
             window,
             renderer,
             overlay,
+            atlases,
         });
     }
 
