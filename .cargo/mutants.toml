@@ -28,6 +28,10 @@ exclude_re = [
     # are equally short, and either is a correct path.
     'replace > with >= in lerp',
 
+    # Equivalent: clamping `max_y` to `height - 1` avoids scanning rows past
+    # the south edge, where `Terrain::tile` returns `None` and no entity sits.
+    'replace - with (\+|/) in expanded_range',
+
     # Error and usage messages: wording, not behaviour.
     'impl fmt::Display for',
     'report_usage_error',
@@ -46,16 +50,18 @@ exclude_re = [
 ]
 
 # Excluded from mutation testing: the headless and game binaries, and the
-# `winit`/`wgpu` glue in `renderer.rs`, `terrain_pipeline.rs` and `window.rs`.
+# `winit`/`wgpu` glue in `renderer.rs`, `terrain_pipeline.rs`,
+# `sprite_pipeline.rs` and `window.rs`.
 # CI's reproducibility job checks the headless runner; no CI job runs the game,
 # which is checked by hand with `just game`. Pure camera math (`camera.rs`),
-# terrain layering (`terrain_mesh.rs`), chunk caching (`chunk_cache.rs`), input
-# state (`input/`) and camera controls (`camera_controls.rs`) remain
-# mutation-tested.
+# terrain layering (`terrain_mesh.rs`), chunk caching (`chunk_cache.rs`),
+# sprite culling and sorting (`sprites.rs`), input state (`input/`) and camera
+# controls (`camera_controls.rs`) remain mutation-tested.
 exclude_globs = [
     "crates/headless/**",
     "crates/game/**",
     "crates/render/src/renderer.rs",
+    "crates/render/src/sprite_pipeline.rs",
     "crates/render/src/terrain_pipeline.rs",
     "crates/app/src/window.rs",
 ]

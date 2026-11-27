@@ -29,7 +29,7 @@ fn obstacle_kinds() -> Vec<ObstacleKindDefinition> {
     };
     vec![
         kind("rock", &[]),
-        kind("boulder", &[(1, 0), (0, 1), (1, 1)]),
+        kind("boulder", &[(0, -1), (1, -1), (1, 0)]),
         kind("broadleaf_tree", &[]),
         kind("conifer", &[]),
         kind("palm", &[]),
