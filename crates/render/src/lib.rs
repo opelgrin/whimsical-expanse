@@ -9,6 +9,8 @@ mod interpolation;
 mod palette;
 pub mod renderer;
 mod scene;
+mod sprite_pipeline;
+mod sprites;
 mod terrain_mesh;
 mod terrain_pipeline;
 

@@ -100,7 +100,7 @@ fn sprites() -> Vec<SpriteRecipe> {
             Constant([112, 108, 102]),
             Boulder,
             [2, 2],
-            [0, 0],
+            [0, 1],
         ),
         sprite(
             "broadleaf_tree",

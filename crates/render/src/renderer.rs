@@ -8,6 +8,7 @@ use crate::camera::{Camera, CameraUniform, Viewport};
 use crate::interpolation::Interpolation;
 use crate::palette::TerrainView;
 use crate::scene::{QuadInstance, TerrainStyle, build_instances};
+use crate::sprite_pipeline::SpritePipeline;
 use crate::terrain_pipeline::TerrainPipeline;
 
 /// Errors that can prevent creating or running the renderer.
@@ -94,6 +95,7 @@ pub struct Renderer<'window> {
     surface_config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
     terrain_pipeline: TerrainPipeline,
+    sprite_pipeline: SpritePipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instance_buffer: wgpu::Buffer,
@@ -157,9 +159,11 @@ impl<'window> Renderer<'window> {
             surface.configure(&device, &surface_config);
         }
 
-        let (pipeline, camera_buffer, camera_bind_group) =
+        let (pipeline, camera_buffer, camera_bind_group_layout, camera_bind_group) =
             create_quad_pipeline(&device, surface_config.format);
         let terrain_pipeline = TerrainPipeline::new(&device, surface_config.format);
+        let sprite_pipeline =
+            SpritePipeline::new(&device, surface_config.format, &camera_bind_group_layout);
         let instance_buffer = create_instance_buffer(&device, INITIAL_INSTANCE_CAPACITY);
         let ui_painter = egui_wgpu::Renderer::new(
             &device,
@@ -174,6 +178,7 @@ impl<'window> Renderer<'window> {
             surface_config,
             pipeline,
             terrain_pipeline,
+            sprite_pipeline,
             camera_buffer,
             camera_bind_group,
             instance_buffer,
@@ -238,6 +243,7 @@ impl<'window> Renderer<'window> {
             assets,
             &atlas_views,
         );
+        self.sprite_pipeline.set_assets(&self.device, &atlas_views);
     }
 
     /// The atlas pages uploaded, as the UI can show them.
@@ -352,12 +358,21 @@ impl<'window> Renderer<'window> {
                 assets,
             );
         }
-
-        build_instances(
-            &mut self.instances,
+        self.sprite_pipeline.prepare(
+            &self.device,
+            &self.queue,
             camera,
             viewport,
             interpolation,
+            assets,
+            textured,
+        );
+
+        let quad_ranges = build_instances(
+            &mut self.instances,
+            camera,
+            viewport,
+            &interpolation.current.terrain,
             terrain,
         );
         if !self.instances.is_empty() {
@@ -378,38 +393,7 @@ impl<'window> Renderer<'window> {
                 label: Some("world-frame-encoder"),
             });
 
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("world-render-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(BACKGROUND_CLEAR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            if textured {
-                self.terrain_pipeline.draw(&mut pass);
-            }
-
-            if let Ok(instance_count) = u32::try_from(self.instances.len())
-                && instance_count > 0
-            {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-                pass.draw(0..6, 0..instance_count);
-            }
-        }
-
+        self.draw_world(&mut encoder, &view, textured, quad_ranges);
         let ui_commands = self.draw_ui(&mut encoder, &view, ui);
 
         self.queue.submit(
@@ -422,6 +406,58 @@ impl<'window> Renderer<'window> {
             self.surface.configure(&self.device, &self.surface_config);
         }
         Ok(())
+    }
+
+    /// Records the world render pass: terrain (textured or flat), sorted
+    /// sprites, and the debug obstacle layer on top.
+    fn draw_world(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        textured: bool,
+        quad_ranges: crate::scene::QuadRanges,
+    ) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("world-render-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(BACKGROUND_CLEAR),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        if textured {
+            self.terrain_pipeline.draw(&mut pass);
+        } else {
+            self.draw_quads(&mut pass, quad_ranges.flat_tiles);
+        }
+
+        self.sprite_pipeline
+            .draw(&mut pass, &self.camera_bind_group);
+
+        self.draw_quads(&mut pass, quad_ranges.obstacle_marks);
+    }
+
+    fn draw_quads<'pass>(
+        &'pass self,
+        pass: &mut wgpu::RenderPass<'pass>,
+        range: std::ops::Range<u32>,
+    ) {
+        if range.is_empty() {
+            return;
+        }
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        pass.draw(0..6, range);
     }
 
     /// Records a pass that paints `ui` over what `view` already holds. Returns
@@ -515,7 +551,12 @@ fn build_surface_config(
 fn create_quad_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
-) -> (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup) {
+) -> (
+    wgpu::RenderPipeline,
+    wgpu::Buffer,
+    wgpu::BindGroupLayout,
+    wgpu::BindGroup,
+) {
     let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("camera-uniform"),
         size: size_of::<CameraUniform>() as wgpu::BufferAddress,
@@ -587,7 +628,12 @@ fn create_quad_pipeline(
         cache: None,
     });
 
-    (pipeline, camera_buffer, camera_bind_group)
+    (
+        pipeline,
+        camera_buffer,
+        camera_bind_group_layout,
+        camera_bind_group,
+    )
 }
 
 fn write_mip_level(
