@@ -120,9 +120,8 @@ or Windows).
    palette-quantisation and outline cleanup pass.
 4. **Verify before finishing:**
    - Check every 47-tile blob sheet automatically against the transparency-mask
-     rule and slot order in [findings/asset-pack.md](findings/asset-pack.md)
-     (noting that frame 0 of the pack's grass-over-water sheet has a shore pixel
-     touching the SW corner).
+     rule and slot order in [findings/asset-pack.md](findings/asset-pack.md),
+     except for the kinds of block it lists as misread by that rule.
    - Inspect **4× nearest-neighbour** previews of both the sprite sheets (over a
      dark checkerboard to spot stray pixels) and a multi-tile mockup containing
      a pack character and an adjacent pack biome tile.

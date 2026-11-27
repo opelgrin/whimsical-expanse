@@ -424,3 +424,51 @@ impl fmt::Display for InvalidRecipe {
 }
 
 impl Error for InvalidRecipe {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::blob::Slot;
+
+    /// The mask that the pack's convention reads from a tile's transparency
+    /// (see `dev/findings/asset-pack.md#tiles`): a side is present when the
+    /// two middle pixels of that edge are opaque, a corner when its pixel is.
+    fn read_mask(block: &Image, slot: Slot) -> NeighbourMask {
+        let (left, top) = (slot.column * TILE_SIZE, slot.row * TILE_SIZE);
+        let (far, middle) = (TILE_SIZE - 1, TILE_SIZE / 2);
+        let opaque = |x: u32, y: u32| block.get(left + x, top + y)[3] == u8::MAX;
+        let edge_opaque = |a: (u32, u32), b: (u32, u32)| opaque(a.0, a.1) && opaque(b.0, b.1);
+        NeighbourMask::from_fn(|neighbour| match neighbour {
+            Neighbour::North => edge_opaque((middle - 1, 0), (middle, 0)),
+            Neighbour::East => edge_opaque((far, middle - 1), (far, middle)),
+            Neighbour::South => edge_opaque((middle - 1, far), (middle, far)),
+            Neighbour::West => edge_opaque((0, middle - 1), (0, middle)),
+            Neighbour::NorthEast => opaque(far, 0),
+            Neighbour::SouthEast => opaque(far, far),
+            Neighbour::SouthWest => opaque(0, far),
+            Neighbour::NorthWest => opaque(0, 0),
+        })
+        .canonical()
+    }
+
+    /// Catches a placeholder block that the pack's blocks could not replace:
+    /// an open edge drawn on the wrong side, an inner corner without its
+    /// notch, an inset so deep that a present side's middle is cut, or a shape
+    /// drawn in the empty slot.
+    #[test]
+    fn every_slot_reads_as_its_shape_under_the_packs_transparency_convention() {
+        let block = draw_block([90, 140, 60], Pattern::Solid, 0);
+        for slot in slots() {
+            if let Some(mask) = mask_of_slot(slot) {
+                assert_eq!(read_mask(&block, slot), mask, "slot {slot:?}");
+                continue;
+            }
+            let (left, top) = (slot.column * TILE_SIZE, slot.row * TILE_SIZE);
+            for y in top..top + TILE_SIZE {
+                for x in left..left + TILE_SIZE {
+                    assert_eq!(block.get(x, y)[3], 0, "empty slot pixel ({x}, {y})");
+                }
+            }
+        }
+    }
+}
