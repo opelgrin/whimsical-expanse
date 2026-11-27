@@ -33,7 +33,70 @@ pub struct Region {
     pub y: u32,
 }
 
-/// A ground's blob blocks: per variant, per frame.
+/// One atlas page, with its half-size mipmap level for zooms below 1×.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Atlas {
+    image: Image,
+    mipmap: Image,
+}
+
+impl Atlas {
+    /// Creates an atlas page from its full-size `image` and its half-size
+    /// `mipmap`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `mipmap` is not half the dimensions of `image`.
+    pub(crate) fn new(image: Image, mipmap: Image) -> Self {
+        assert!(
+            image.width() > 0
+                && image.height() > 0
+                && image.width().is_multiple_of(2)
+                && image.height().is_multiple_of(2)
+                && mipmap.width() == image.width() / 2
+                && mipmap.height() == image.height() / 2,
+            "mipmap {}×{} does not match atlas {}×{}",
+            mipmap.width(),
+            mipmap.height(),
+            image.width(),
+            image.height(),
+        );
+        Self { image, mipmap }
+    }
+
+    /// Builds an atlas page from its full-size `image`, computing its
+    /// half-size mipmap level.
+    pub(crate) fn from_image(image: Image) -> Self {
+        let mipmap = image.downsample();
+        Self { image, mipmap }
+    }
+
+    /// The width of the full-size page, in pixels.
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.image.width()
+    }
+
+    /// The height of the full-size page, in pixels.
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.image.height()
+    }
+
+    /// Level 0: the full-size atlas image, in sRGB with straight alpha.
+    #[must_use]
+    pub const fn image(&self) -> &Image {
+        &self.image
+    }
+
+    /// Level 1: the half-size mipmap image, in sRGB with straight alpha.
+    #[must_use]
+    pub const fn mipmap(&self) -> &Image {
+        &self.mipmap
+    }
+}
+
+/// A ground's blob blocks: per variant, per frame, all on one atlas page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GroundEntry {
     pub(crate) id: GroundId,
@@ -47,6 +110,12 @@ impl GroundEntry {
     #[must_use]
     pub const fn id(&self) -> &GroundId {
         &self.id
+    }
+
+    /// The atlas page holding every variant and frame of this ground.
+    #[must_use]
+    pub fn atlas(&self) -> u16 {
+        self.variants[0][0].atlas
     }
 
     /// The blocks: per variant, one or one per season, the frames.
@@ -63,6 +132,41 @@ impl GroundEntry {
             x: block.x + slot.column * CELL,
             y: block.y + slot.row * CELL,
         }
+    }
+}
+
+/// Blob blocks for a higher ground drawn over a particular lower ground: per
+/// variant, per frame, all on one atlas page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroundPairEntry {
+    pub(crate) higher: GroundIndex,
+    pub(crate) lower: GroundIndex,
+    pub(crate) variants: Vec<Vec<Region>>,
+}
+
+impl GroundPairEntry {
+    /// The ground drawn on top.
+    #[must_use]
+    pub const fn higher(&self) -> GroundIndex {
+        self.higher
+    }
+
+    /// The ground immediately beneath it on the tile.
+    #[must_use]
+    pub const fn lower(&self) -> GroundIndex {
+        self.lower
+    }
+
+    /// The atlas page holding every variant and frame of this pair.
+    #[must_use]
+    pub fn atlas(&self) -> u16 {
+        self.variants[0][0].atlas
+    }
+
+    /// The blocks: per variant, one or one per season, the frames.
+    #[must_use]
+    pub fn variants(&self) -> &[Vec<Region>] {
+        &self.variants
     }
 }
 
@@ -140,16 +244,18 @@ impl Overhang {
 /// Cooked art: the atlas pages, and the regions of each logical ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Container {
-    atlases: Vec<Image>,
+    atlases: Vec<Atlas>,
     grounds: Vec<GroundEntry>,
+    ground_pairs: Vec<GroundPairEntry>,
     sprites: Vec<SpriteEntry>,
     largest_overhang: Overhang,
 }
 
 impl Container {
     pub(crate) fn new(
-        atlases: Vec<Image>,
+        atlases: Vec<Atlas>,
         grounds: Vec<GroundEntry>,
+        ground_pairs: Vec<GroundPairEntry>,
         sprites: Vec<SpriteEntry>,
     ) -> Self {
         let largest_overhang = sprites
@@ -159,14 +265,16 @@ impl Container {
         Self {
             atlases,
             grounds,
+            ground_pairs,
             sprites,
             largest_overhang,
         }
     }
 
-    /// The atlas pages, in sRGB with straight alpha.
+    /// The atlas pages, each with its half-size mipmap, in sRGB with straight
+    /// alpha.
     #[must_use]
-    pub fn atlases(&self) -> &[Image] {
+    pub fn atlases(&self) -> &[Atlas] {
         &self.atlases
     }
 
@@ -174,6 +282,21 @@ impl Container {
     #[must_use]
     pub fn grounds(&self) -> &[GroundEntry] {
         &self.grounds
+    }
+
+    /// Every ground-over-ground pair block.
+    #[must_use]
+    pub fn ground_pairs(&self) -> &[GroundPairEntry] {
+        &self.ground_pairs
+    }
+
+    /// The pair block for `higher` drawn directly over `lower`, if the
+    /// container defines one.
+    #[must_use]
+    pub fn ground_pair(&self, higher: GroundIndex, lower: GroundIndex) -> Option<&GroundPairEntry> {
+        self.ground_pairs
+            .iter()
+            .find(|pair| pair.higher == higher && pair.lower == lower)
     }
 
     /// Every sprite.

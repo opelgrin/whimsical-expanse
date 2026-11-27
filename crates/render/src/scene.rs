@@ -66,13 +66,19 @@ pub(crate) fn build_instances(
 }
 
 /// Pushes each visible tile, wrapping across the seam, with its obstacle mark
-/// if the obstacle layer is shown.
+/// if the obstacle layer is shown. In [`TerrainView::Terrain`] the textured
+/// terrain pipeline draws the tiles themselves, so only obstacle marks are
+/// emitted here.
 fn push_terrain(
     instances: &mut Vec<QuadInstance>,
     visible: VisibleTileRange,
     interpolation: &Interpolation<'_>,
     style: &TerrainStyle<'_>,
 ) {
+    let draw_flat_tiles = style.display.view != TerrainView::Terrain;
+    if !draw_flat_tiles && !style.display.obstacles {
+        return;
+    }
     let terrain = &interpolation.current.terrain;
     for y in visible.min_y..=visible.max_y {
         for x in visible.min_x..=visible.max_x {
@@ -84,11 +90,13 @@ fn push_terrain(
                 reason = "visible tile coordinates fit within f32"
             )]
             let origin = [x as f32, y as f32];
-            instances.push(QuadInstance {
-                origin,
-                size: [1.0, 1.0],
-                color: style.palette.colour(style.display.view, tile),
-            });
+            if draw_flat_tiles {
+                instances.push(QuadInstance {
+                    origin,
+                    size: [1.0, 1.0],
+                    color: style.palette.colour(style.display.view, tile),
+                });
+            }
             let obstacle = tile.obstacle();
             if !style.display.obstacles || obstacle == ObstacleCell::Empty {
                 continue;

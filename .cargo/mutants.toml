@@ -46,13 +46,16 @@ exclude_re = [
 ]
 
 # Excluded from mutation testing: the headless and game binaries, and the
-# `winit`/`wgpu` glue in `renderer.rs` and `window.rs`. CI's reproducibility job
-# checks the headless runner; no CI job runs the game, which is checked by hand
-# with `just game`. Pure camera math (`camera.rs`), input state (`input/`) and
-# camera controls (`camera_controls.rs`) remain mutation-tested.
+# `winit`/`wgpu` glue in `renderer.rs`, `terrain_pipeline.rs` and `window.rs`.
+# CI's reproducibility job checks the headless runner; no CI job runs the game,
+# which is checked by hand with `just game`. Pure camera math (`camera.rs`),
+# terrain layering (`terrain_mesh.rs`), chunk caching (`chunk_cache.rs`), input
+# state (`input/`) and camera controls (`camera_controls.rs`) remain
+# mutation-tested.
 exclude_globs = [
     "crates/headless/**",
     "crates/game/**",
     "crates/render/src/renderer.rs",
+    "crates/render/src/terrain_pipeline.rs",
     "crates/app/src/window.rs",
 ]

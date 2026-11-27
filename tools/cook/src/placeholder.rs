@@ -131,7 +131,11 @@ pub fn draw_placeholders(recipes: &Recipes) -> Result<Sources, InvalidRecipe> {
         .iter()
         .map(draw_sprite)
         .collect::<Result<_, _>>()?;
-    Ok(Sources { grounds, sprites })
+    Ok(Sources {
+        grounds,
+        pairs: Vec::new(),
+        sprites,
+    })
 }
 
 fn draw_ground(recipe: &GroundRecipe) -> Result<SourceGround, InvalidRecipe> {

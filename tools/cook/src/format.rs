@@ -13,7 +13,9 @@ use std::io::{self, Read, Write};
 use expanse_core::asset::{GroundId, InvalidAssetName, SpriteId};
 
 use crate::blob::{BLOCK_COLUMNS, BLOCK_ROWS};
-use crate::container::{CELL, Container, GroundEntry, PADDING, Region, SpriteEntry};
+use crate::container::{
+    Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, PADDING, Region, SpriteEntry,
+};
 use crate::image::{Image, Rgba};
 use crate::pack::MAX_ATLAS_SIZE;
 use crate::source::SEASONS;
@@ -21,7 +23,7 @@ use crate::source::SEASONS;
 const MAGIC: [u8; 8] = *b"XPNSART\0";
 
 /// The version of the format. Any change to what is written changes it.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 /// The most frames an asset may have, a guard against damaged files.
 const MAX_FRAMES: u32 = 64;
@@ -41,13 +43,19 @@ pub fn write_container(container: &Container, writer: &mut impl Write) -> io::Re
     for atlas in container.atlases() {
         put_u32(writer, atlas.width())?;
         put_u32(writer, atlas.height())?;
-        let bytes: Vec<u8> = atlas.pixels().iter().flatten().copied().collect();
-        writer.write_all(&bytes)?;
+        put_pixels(writer, atlas.image())?;
+        put_pixels(writer, atlas.mipmap())?;
     }
     put_count(writer, container.grounds().len())?;
     for ground in container.grounds() {
         put_str(writer, ground.id().name())?;
         put_regions(writer, ground.variants())?;
+    }
+    put_count(writer, container.ground_pairs().len())?;
+    for pair in container.ground_pairs() {
+        writer.write_all(&pair.higher().0.to_le_bytes())?;
+        writer.write_all(&pair.lower().0.to_le_bytes())?;
+        put_regions(writer, pair.variants())?;
     }
     put_count(writer, container.sprites().len())?;
     for sprite in container.sprites() {
@@ -88,13 +96,18 @@ pub fn read_container(reader: &mut impl Read) -> Result<Container, ReadError> {
     for _ in 0..atlas_count {
         let width = get_u32(reader)?;
         let height = get_u32(reader)?;
-        if width > MAX_ATLAS_SIZE || height > MAX_ATLAS_SIZE {
-            return Err(ReadError::Invalid("an atlas page is too large"));
+        if width == 0
+            || height == 0
+            || width > MAX_ATLAS_SIZE
+            || height > MAX_ATLAS_SIZE
+            || !width.is_multiple_of(2)
+            || !height.is_multiple_of(2)
+        {
+            return Err(ReadError::Invalid("an atlas page has invalid dimensions"));
         }
-        let mut bytes = vec![0; 4 * usize::try_from(width * height).expect("fits in memory")];
-        reader.read_exact(&mut bytes)?;
-        let pixels: Vec<Rgba> = bytes.as_chunks::<4>().0.to_vec();
-        atlases.push(Image::from_pixels(width, height, pixels).expect("one pixel per position"));
+        let image = get_image(reader, width, height)?;
+        let mipmap = get_image(reader, width / 2, height / 2)?;
+        atlases.push(Atlas::new(image, mipmap));
     }
     let sizes: Vec<[u32; 2]> = atlases.iter().map(|a| [a.width(), a.height()]).collect();
 
@@ -106,11 +119,39 @@ pub fn read_container(reader: &mut impl Read) -> Result<Container, ReadError> {
     ];
     for _ in 0..ground_count {
         let id = GroundId::new(get_str(reader)?)?;
-        let variants = get_regions(reader, &sizes, block)?;
+        let variants = get_regions(reader, &sizes, block, true)?;
         if grounds.iter().any(|g: &GroundEntry| g.id == id) {
             return Err(ReadError::Invalid("a ground is listed twice"));
         }
         grounds.push(GroundEntry { id, variants });
+    }
+
+    let pair_count = get_count(reader, u32::from(u16::MAX))?;
+    if ground_count.saturating_add(pair_count) >= usize::from(u16::MAX) {
+        return Err(ReadError::Invalid("too many grounds and ground pairs"));
+    }
+    let mut ground_pairs = Vec::with_capacity(pair_count);
+    for _ in 0..pair_count {
+        let higher = GroundIndex(get_u16(reader)?);
+        let lower = GroundIndex(get_u16(reader)?);
+        if usize::from(higher.0) >= ground_count
+            || usize::from(lower.0) >= ground_count
+            || higher == lower
+        {
+            return Err(ReadError::Invalid("a ground pair names an invalid ground"));
+        }
+        if ground_pairs
+            .iter()
+            .any(|p: &GroundPairEntry| p.higher == higher && p.lower == lower)
+        {
+            return Err(ReadError::Invalid("a ground pair is listed twice"));
+        }
+        let variants = get_regions(reader, &sizes, block, true)?;
+        ground_pairs.push(GroundPairEntry {
+            higher,
+            lower,
+            variants,
+        });
     }
 
     let sprite_count = get_count(reader, u32::from(u16::MAX))?;
@@ -124,7 +165,7 @@ pub fn read_container(reader: &mut impl Read) -> Result<Container, ReadError> {
                 "a sprite has no pixels or its anchor outside",
             ));
         }
-        let variants = get_regions(reader, &sizes, size)?;
+        let variants = get_regions(reader, &sizes, size, false)?;
         if sprites.iter().any(|s: &SpriteEntry| s.id == id) {
             return Err(ReadError::Invalid("a sprite is listed twice"));
         }
@@ -135,7 +176,19 @@ pub fn read_container(reader: &mut impl Read) -> Result<Container, ReadError> {
             variants,
         });
     }
-    Ok(Container::new(atlases, grounds, sprites))
+    Ok(Container::new(atlases, grounds, ground_pairs, sprites))
+}
+
+fn put_pixels(writer: &mut impl Write, image: &Image) -> io::Result<()> {
+    let bytes: Vec<u8> = image.pixels().iter().flatten().copied().collect();
+    writer.write_all(&bytes)
+}
+
+fn get_image(reader: &mut impl Read, width: u32, height: u32) -> Result<Image, ReadError> {
+    let mut bytes = vec![0; 4 * usize::try_from(width * height).expect("fits in memory")];
+    reader.read_exact(&mut bytes)?;
+    let pixels: Vec<Rgba> = bytes.as_chunks::<4>().0.to_vec();
+    Ok(Image::from_pixels(width, height, pixels).expect("one pixel per position"))
 }
 
 fn put_u32(writer: &mut impl Write, value: u32) -> io::Result<()> {
@@ -162,6 +215,12 @@ fn put_regions(writer: &mut impl Write, variants: &[Vec<Region>]) -> io::Result<
     Ok(())
 }
 
+fn get_u16(reader: &mut impl Read) -> Result<u16, ReadError> {
+    let mut bytes = [0; 2];
+    reader.read_exact(&mut bytes)?;
+    Ok(u16::from_le_bytes(bytes))
+}
+
 fn get_u32(reader: &mut impl Read) -> Result<u32, ReadError> {
     let mut bytes = [0; 4];
     reader.read_exact(&mut bytes)?;
@@ -184,11 +243,13 @@ fn get_str(reader: &mut impl Read) -> Result<String, ReadError> {
 }
 
 /// Reads per-variant, per-frame regions of `size` pixels, checking that each
-/// lies on its page with its padding.
+/// lies on its page with its padding, and if `same_atlas`, that all lie on one
+/// atlas page.
 fn get_regions(
     reader: &mut impl Read,
     atlas_sizes: &[[u32; 2]],
     size: [u32; 2],
+    same_atlas: bool,
 ) -> Result<Vec<Vec<Region>>, ReadError> {
     let variant_count = get_count(reader, u32::try_from(SEASONS).expect("small"))?;
     let frame_count = get_count(reader, MAX_FRAMES)?;
@@ -197,17 +258,21 @@ fn get_regions(
             "an asset has the wrong number of variants or frames",
         ));
     }
+    let mut first_atlas = None;
     let mut variants = Vec::with_capacity(variant_count);
     for _ in 0..variant_count {
         let mut frames = Vec::with_capacity(frame_count);
         for _ in 0..frame_count {
-            let mut atlas = [0; 2];
-            reader.read_exact(&mut atlas)?;
             let region = Region {
-                atlas: u16::from_le_bytes(atlas),
+                atlas: get_u16(reader)?,
                 x: get_u32(reader)?,
                 y: get_u32(reader)?,
             };
+            if same_atlas && *first_atlas.get_or_insert(region.atlas) != region.atlas {
+                return Err(ReadError::Invalid(
+                    "a ground's variants span several atlas pages",
+                ));
+            }
             let [width, height] = *atlas_sizes
                 .get(usize::from(region.atlas))
                 .ok_or(ReadError::Invalid("a region names a missing atlas page"))?;

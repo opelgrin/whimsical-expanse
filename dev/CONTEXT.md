@@ -31,8 +31,9 @@ immutable chunks rather than copying them.
 **Debug overlay**: development controls and readings drawn over the world,
 hidden until toggled. Not the game's UI.
 
-**Terrain view**: what colours the terrain on screen: each tile's biome, or
-one of its fields on a colour ramp. Chosen in the debug overlay.
+**Terrain view**: how the terrain is drawn on screen: textured ground tiles,
+each tile's biome in flat colour, or one of its fields on a colour ramp. Chosen
+in the debug overlay.
 
 **Obstacle layer**: marks over any terrain view on the tiles that obstacles
 block, the anchor differently from the rest of its footprint. Shown from the

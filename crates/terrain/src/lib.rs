@@ -17,7 +17,7 @@ pub use biome::{
     Biome, BiomeDefinition, BiomeObstacle, BiomeObstacleDefinition, BiomeTable, FieldRanges,
     InvalidBiomeTable, ObstacleKind, ObstacleKindDefinition, ObstacleProblem, Variation,
 };
-pub use chunks::{CHUNK_SIZE, ChunkPos, Terrain};
+pub use chunks::{CHUNK_SIZE, ChunkPos, ChunkStamp, Terrain};
 pub use climate::{Latitude, TimeOfYear, temperature_at};
 pub use field::{
     Field, Fields, HIGHEST_CELSIUS, LOWEST_CELSIUS, SEA_LEVEL, temperature_from_celsius,

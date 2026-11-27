@@ -26,6 +26,18 @@ pub struct SourceGround {
     pub variants: Vec<Vec<Image>>,
 }
 
+/// The art of one ground drawn directly over a particular lower ground, such
+/// as grass over shallow water. A pair is not a logical ID: content never
+/// names one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceGroundPair {
+    pub higher: GroundId,
+    pub lower: GroundId,
+    /// One variant, or one per season. Each holds the animation's frames, at
+    /// least one, as blob blocks of 12×4 tiles.
+    pub variants: Vec<Vec<Image>>,
+}
+
 /// The art of one sprite.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceSprite {
@@ -42,6 +54,7 @@ pub struct SourceSprite {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Sources {
     pub grounds: Vec<SourceGround>,
+    pub pairs: Vec<SourceGroundPair>,
     pub sprites: Vec<SourceSprite>,
 }
 
@@ -55,7 +68,7 @@ impl Sources {
     ///
     /// Returns the first problem found, naming the asset.
     pub fn check(&self) -> Result<(), InvalidSource> {
-        if self.grounds.len() >= usize::from(u16::MAX)
+        if self.grounds.len().saturating_add(self.pairs.len()) >= usize::from(u16::MAX)
             || self.sprites.len() >= usize::from(u16::MAX)
         {
             return Err(InvalidSource::TooMany);
@@ -68,12 +81,32 @@ impl Sources {
             {
                 return Err(InvalidSource::Repeated(asset()));
             }
-            check_variants(&ground.variants, asset)?;
-            for image in ground.variants.iter().flatten() {
-                if [image.width(), image.height()] != BLOCK_SIZE {
-                    return Err(InvalidSource::WrongBlockSize(asset()));
-                }
+            check_ground_blocks(&ground.variants, asset)?;
+        }
+        for (index, pair) in self.pairs.iter().enumerate() {
+            let asset = || format!("ground pair `{}` over `{}`", pair.higher, pair.lower);
+            if pair.higher == pair.lower {
+                return Err(InvalidSource::PairWithItself(pair.higher.clone()));
             }
+            if !self.grounds.iter().any(|g| g.id == pair.higher) {
+                return Err(InvalidSource::UnknownPairGround {
+                    pair: asset(),
+                    ground: pair.higher.clone(),
+                });
+            }
+            if !self.grounds.iter().any(|g| g.id == pair.lower) {
+                return Err(InvalidSource::UnknownPairGround {
+                    pair: asset(),
+                    ground: pair.lower.clone(),
+                });
+            }
+            if self.pairs[..index]
+                .iter()
+                .any(|earlier| earlier.higher == pair.higher && earlier.lower == pair.lower)
+            {
+                return Err(InvalidSource::Repeated(asset()));
+            }
+            check_ground_blocks(&pair.variants, asset)?;
         }
         for (index, sprite) in self.sprites.iter().enumerate() {
             let asset = || format!("sprite `{}`", sprite.id);
@@ -102,6 +135,19 @@ impl Sources {
     }
 }
 
+fn check_ground_blocks(
+    variants: &[Vec<Image>],
+    asset: impl Fn() -> String,
+) -> Result<(), InvalidSource> {
+    check_variants(variants, &asset)?;
+    for image in variants.iter().flatten() {
+        if [image.width(), image.height()] != BLOCK_SIZE {
+            return Err(InvalidSource::WrongBlockSize(asset()));
+        }
+    }
+    Ok(())
+}
+
 fn check_variants(
     variants: &[Vec<Image>],
     asset: impl Fn() -> String,
@@ -122,6 +168,10 @@ fn check_variants(
 pub enum InvalidSource {
     /// Two assets of one kind share an ID.
     Repeated(String),
+    /// A ground pair has the same ground on top and beneath.
+    PairWithItself(GroundId),
+    /// A ground pair names a ground that is not in the sources.
+    UnknownPairGround { pair: String, ground: GroundId },
     /// An asset has neither one variant nor one per season.
     VariantCount(String),
     /// An asset has no frames, or its variants have different numbers of
@@ -135,7 +185,7 @@ pub enum InvalidSource {
     SpriteSizesDiffer(String),
     /// A sprite's anchor lies outside its image.
     AnchorOutside(String),
-    /// There are 2^16 grounds or sprites, or more.
+    /// There are 2^16 grounds and pairs, or sprites, or more.
     TooMany,
 }
 
@@ -143,6 +193,12 @@ impl fmt::Display for InvalidSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Repeated(asset) => write!(f, "{asset} is defined twice"),
+            Self::PairWithItself(ground) => {
+                write!(f, "ground pair `{ground}` cannot pair with itself")
+            }
+            Self::UnknownPairGround { pair, ground } => {
+                write!(f, "{pair} names unknown ground `{ground}`")
+            }
             Self::VariantCount(asset) => {
                 write!(
                     f,

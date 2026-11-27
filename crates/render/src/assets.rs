@@ -7,8 +7,9 @@
 use std::error::Error;
 use std::fmt;
 
-use expanse_cook::{Container, GroundIndex, SpriteIndex};
+use expanse_cook::{Container, GroundIndex, Region, SEASONS, SpriteIndex};
 use expanse_core::asset::{GroundId, SpriteId};
+use expanse_core::hash::FixedHashMap;
 use expanse_terrain::BiomeTable;
 
 /// The logical asset IDs that presentation needs beyond the biome table.
@@ -28,6 +29,20 @@ pub struct AssetContent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GroundRank(pub u16);
 
+/// Index of a ground or ground-pair blob block in [`Assets::ground_blocks`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BlockId(pub u16);
+
+/// One ground or ground-pair blob block, resolved for GPU lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GroundBlock {
+    /// The atlas page holding every variant and frame of this block.
+    pub atlas: u16,
+    /// The top-left pixel (inside padding) of the first frame of each
+    /// seasonal variant. Assets with a single variant repeat it in every slot.
+    pub variant_origins: [[u32; 2]; SEASONS],
+}
+
 /// The content's art, resolved against a container.
 #[derive(Debug)]
 pub struct Assets {
@@ -36,6 +51,11 @@ pub struct Assets {
     grounds: Vec<GroundIndex>,
     /// For each biome, the rank of its ground.
     biome_grounds: Vec<GroundRank>,
+    /// Every ground block (at `BlockId(rank.0)`) followed by any applicable
+    /// ground-pair blocks.
+    ground_blocks: Vec<GroundBlock>,
+    /// Pair override blocks, keyed by `(higher, lower)`.
+    pair_blocks: FixedHashMap<(GroundRank, GroundRank), BlockId>,
     /// For each obstacle kind, its sprite.
     obstacle_sprites: Vec<SpriteIndex>,
     wanderer_sprite: SpriteIndex,
@@ -118,13 +138,18 @@ impl Assets {
         let wanderer_sprite = sprite("the wanderer".to_owned(), &content.wanderer_sprite);
 
         match wanderer_sprite {
-            Some(wanderer_sprite) if problems.is_empty() => Ok(Self {
-                container,
-                grounds,
-                biome_grounds,
-                obstacle_sprites,
-                wanderer_sprite,
-            }),
+            Some(wanderer_sprite) if problems.is_empty() => {
+                let (ground_blocks, pair_blocks) = resolve_ground_blocks(&container, &grounds);
+                Ok(Self {
+                    container,
+                    grounds,
+                    biome_grounds,
+                    ground_blocks,
+                    pair_blocks,
+                    obstacle_sprites,
+                    wanderer_sprite,
+                })
+            }
             _ => Err(MissingAssets { problems }),
         }
     }
@@ -147,6 +172,35 @@ impl Assets {
         self.biome_grounds[usize::from(biome.0)]
     }
 
+    /// Every resolved ground and ground-pair block, indexed by [`BlockId`].
+    #[must_use]
+    pub fn ground_blocks(&self) -> &[GroundBlock] {
+        &self.ground_blocks
+    }
+
+    /// The block of `rank` itself (used for the base layer or when no pair
+    /// overrides it).
+    #[must_use]
+    pub const fn ground_block(&self, rank: GroundRank) -> BlockId {
+        BlockId(rank.0)
+    }
+
+    /// The block to draw for `higher` immediately over `lower`: the pair's
+    /// block if the container provides one, otherwise `higher`'s own block.
+    #[must_use]
+    pub fn layer_block(&self, higher: GroundRank, lower: GroundRank) -> BlockId {
+        self.pair_blocks
+            .get(&(higher, lower))
+            .copied()
+            .unwrap_or_else(|| self.ground_block(higher))
+    }
+
+    /// The resolved metadata for `block`.
+    #[must_use]
+    pub fn block(&self, block: BlockId) -> GroundBlock {
+        self.ground_blocks[usize::from(block.0)]
+    }
+
     /// The sprite of an obstacle kind.
     #[must_use]
     pub fn obstacle_sprite(&self, kind: expanse_terrain::ObstacleIndex) -> SpriteIndex {
@@ -157,6 +211,54 @@ impl Assets {
     #[must_use]
     pub const fn wanderer_sprite(&self) -> SpriteIndex {
         self.wanderer_sprite
+    }
+}
+
+fn resolve_ground_blocks(
+    container: &Container,
+    grounds: &[GroundIndex],
+) -> (
+    Vec<GroundBlock>,
+    FixedHashMap<(GroundRank, GroundRank), BlockId>,
+) {
+    let mut rank_of = FixedHashMap::default();
+    let mut blocks = Vec::with_capacity(grounds.len() + container.ground_pairs().len());
+    for (rank, &ground_index) in grounds.iter().enumerate() {
+        let rank = GroundRank(u16::try_from(rank).expect("fewer than 2^16 grounds"));
+        rank_of.insert(ground_index, rank);
+        let entry = container.ground(ground_index);
+        blocks.push(ground_block_from_variants(entry.atlas(), entry.variants()));
+    }
+    let mut pair_blocks = FixedHashMap::default();
+    for pair in container.ground_pairs() {
+        let (Some(&higher), Some(&lower)) =
+            (rank_of.get(&pair.higher()), rank_of.get(&pair.lower()))
+        else {
+            continue;
+        };
+        if higher <= lower {
+            continue;
+        }
+        let id = BlockId(u16::try_from(blocks.len()).expect("grounds plus pairs fit in u16"));
+        blocks.push(ground_block_from_variants(pair.atlas(), pair.variants()));
+        pair_blocks.insert((higher, lower), id);
+    }
+    (blocks, pair_blocks)
+}
+
+fn ground_block_from_variants(atlas: u16, variants: &[Vec<Region>]) -> GroundBlock {
+    let origin = |variant: usize| {
+        let region = variants[variant][0];
+        [region.x, region.y]
+    };
+    let variant_origins = if variants.len() == 1 {
+        [origin(0); SEASONS]
+    } else {
+        std::array::from_fn(origin)
+    };
+    GroundBlock {
+        atlas,
+        variant_origins,
     }
 }
 
@@ -239,6 +341,7 @@ mod tests {
                 id: ground_id("grass"),
                 variants: vec![vec![Image::new(BLOCK_SIZE[0], BLOCK_SIZE[1])]],
             }],
+            pairs: Vec::new(),
             sprites: vec![SourceSprite {
                 id: sprite("walker"),
                 anchor: [0, 0],

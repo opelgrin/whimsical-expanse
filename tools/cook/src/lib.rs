@@ -18,12 +18,14 @@ pub mod placeholder;
 mod source;
 
 pub use container::{
-    CELL, Container, GroundEntry, GroundIndex, Overhang, PADDING, Region, SpriteEntry, SpriteIndex,
+    Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, Overhang, PADDING, Region,
+    SpriteEntry, SpriteIndex,
 };
 pub use cook::{CookError, cook};
 pub use format::{FORMAT_VERSION, ReadError, read_container, write_container};
 pub use image::{Image, Rgba};
 pub use pack::MAX_ATLAS_SIZE;
 pub use source::{
-    BLOCK_SIZE, InvalidSource, SEASONS, SourceGround, SourceSprite, Sources, TILE_SIZE,
+    BLOCK_SIZE, InvalidSource, SEASONS, SourceGround, SourceGroundPair, SourceSprite, Sources,
+    TILE_SIZE,
 };
