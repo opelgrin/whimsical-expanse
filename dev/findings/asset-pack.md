@@ -62,14 +62,18 @@ empty tile):
   0   4  68  64 117  71 197  93   7 199 215 193
 ```
 
-The first four columns are the 16 shapes without inner corners. Checked by
-reading each slot's mask from its transparency (a side is present when the
-tile's outermost pixels on that side are all opaque, a corner when its pixel
-is): all 47 shapes, in this order, in 48 blocks of the grass sheets of every
-season and of deep forest, grass over water, cave grass, the second winter
-grass sheet and the beach. The four blocks in a row of a grass over water
-sheet differ only in the shore's pixels; one of them reads a few corners as
-filled because a shore pixel lies on the corner. Path, water, cave water,
+The first four columns are the 16 shapes without inner corners. Checked
+(2026-11-27) by reading each slot's mask from its transparency: a side is
+present when the two middle pixels of that edge are opaque, a corner when its
+pixel is. A test on the whole edge does not work, because a narrow strip, such
+as the shape with only a south neighbour, does not span the tile. All 47 shapes
+read in this order in 60 blocks: the non-inverted grass blocks of every season
+and of deep forest, cave grass, the second winter grass sheet, the beach, and
+frames 1 to 3 of the Spring, Summer, Fall and Deep Forest grass over water
+sheets. The four blocks in a row of a grass over water sheet are the 4 frames
+of the shore animation and differ only in the shore's pixels. In frame 0 the
+shore's dark water line reaches the tile's outer edge, so 30 of its slots read
+a side that is absent: read masks from another frame. Path, water, cave water,
 frozen water, tilled soil and dungeon blocks draw their shapes in colour, not
 transparency: they have the same arrangement and empty slot by eye, not
 checked pixel by pixel. Inverted blocks were not checked.
