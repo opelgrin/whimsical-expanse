@@ -1,31 +1,16 @@
-//! Asset cooking: from sources of art to the container the game loads.
+//! Offline asset cooking: from sources of art to the cooked container in
+//! `expanse-assets`.
 //!
 //! Every source of art becomes [source assets](source), and everything from
-//! there is shared: packing on atlas pages, padding, checking and writing.
-//! The game only ever loads a container from disk, so a build without the
-//! licensed pack runs the same path as one with it.
-//!
-//! The library holds no GPU types: the renderer reads the [`Container`] and
-//! uploads it.
+//! there is shared: packing on atlas pages, padding, mipmap generation,
+//! checking and writing. The game never depends on this crate: it only loads
+//! containers through `expanse-assets`.
 
-pub mod blob;
-mod container;
 mod cook;
-mod format;
-mod image;
+mod mipmap;
 mod pack;
 pub mod placeholder;
 mod source;
 
-pub use container::{
-    Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, Overhang, PADDING, Region,
-    SpriteEntry, SpriteIndex,
-};
 pub use cook::{CookError, cook};
-pub use format::{FORMAT_VERSION, ReadError, read_container, write_container};
-pub use image::{Image, Rgba};
-pub use pack::MAX_ATLAS_SIZE;
-pub use source::{
-    BLOCK_SIZE, InvalidSource, SEASONS, SourceGround, SourceGroundPair, SourceSprite, Sources,
-    TILE_SIZE,
-};
+pub use source::{InvalidSource, SourceGround, SourceGroundPair, SourceSprite, Sources};

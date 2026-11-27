@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 
-use expanse_cook::{ReadError, read_container};
+use expanse_assets::{ReadError, read_container};
 use expanse_render::{AssetContent, Assets, MissingAssets};
 use expanse_terrain::BiomeTable;
 

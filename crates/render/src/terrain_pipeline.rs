@@ -3,7 +3,7 @@
 use std::num::NonZeroU64;
 
 use bytemuck::{Pod, Zeroable};
-use expanse_cook::SEASONS;
+use expanse_assets::SEASONS;
 use expanse_terrain::{CHUNK_SIZE, ChunkPos, Terrain};
 
 use crate::assets::{Assets, GroundBlock};

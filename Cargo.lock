@@ -610,7 +610,7 @@ version = "0.1.0"
 dependencies = [
  "egui",
  "egui-winit",
- "expanse-cook",
+ "expanse-assets",
  "expanse-core",
  "expanse-render",
  "expanse-sim",
@@ -620,9 +620,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "expanse-assets"
+version = "0.1.0"
+dependencies = [
+ "expanse-core",
+]
+
+[[package]]
 name = "expanse-cook"
 version = "0.1.0"
 dependencies = [
+ "expanse-assets",
  "expanse-core",
 ]
 
@@ -667,7 +675,7 @@ dependencies = [
  "bytemuck",
  "egui",
  "egui-wgpu",
- "expanse-cook",
+ "expanse-assets",
  "expanse-core",
  "expanse-sim",
  "expanse-terrain",

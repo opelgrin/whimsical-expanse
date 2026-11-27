@@ -11,7 +11,7 @@ publish.workspace = true
 [dependencies]
 egui-winit.workspace = true
 egui.workspace = true
-expanse-cook = { path = "../../tools/cook" }
+expanse-assets = { path = "../assets" }
 expanse-core = { path = "../core" }
 expanse-render = { path = "../render" }
 expanse-sim = { path = "../sim" }

@@ -1,0 +1,15 @@
+[package]
+name = "expanse-assets"
+description = "Cooked asset container, 47-tile blob scheme, and container file format."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+expanse-core = { path = "../core" }
+
+[lints]
+workspace = true

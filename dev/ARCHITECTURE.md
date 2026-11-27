@@ -39,6 +39,7 @@ content, not in advance.
 ```text
 crates/
   core/      IDs, coordinates (wrapping east–west), RNG streams, time
+  assets/    cooked asset container, blob scheme, container file format
   terrain/   tiles in chunks, fields, biomes, obstacles, navigation
   worldgen/  generation: a space's terrain from the seed and its parameters
   sim/       world state, mechanics, perception, knowledge, events, snapshots
@@ -54,7 +55,7 @@ tools/
 ```
 
 Dependencies point downwards only. `sim` and `ai` never depend on `render` or
-`app`, and Cargo enforces this.
+`app`, nothing in `crates/` depends on `tools/`, and Cargo enforces this.
 
 ## Time
 

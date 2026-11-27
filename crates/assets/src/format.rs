@@ -1,10 +1,10 @@
 //! The container's file format: what `cook` writes and the game reads.
 //!
 //! All numbers are little-endian. After a magic number and the format
-//! version come the atlas pages (size, then raw RGBA pixels), the grounds and
-//! the sprites. A string is its length in bytes, then UTF-8. Reading checks
-//! everything the game relies on, so a damaged file is an error, never a
-//! panic or wrong art.
+//! version come the atlas pages (size, then raw RGBA pixels and half-size
+//! mipmap), the grounds, the ground pairs, and the sprites. A string is its
+//! length in bytes, then UTF-8. Reading checks everything the game relies on,
+//! so a damaged file is an error, never a panic or wrong art.
 
 use std::error::Error;
 use std::fmt;
@@ -17,8 +17,7 @@ use crate::container::{
     Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, PADDING, Region, SpriteEntry,
 };
 use crate::image::{Image, Rgba};
-use crate::pack::MAX_ATLAS_SIZE;
-use crate::source::SEASONS;
+use crate::{MAX_ATLAS_SIZE, SEASONS};
 
 const MAGIC: [u8; 8] = *b"XPNSART\0";
 
@@ -351,9 +350,75 @@ impl Error for ReadError {
 
 #[cfg(test)]
 mod tests {
+    use expanse_core::rng::Rng;
+
     use super::*;
-    use crate::cook::cook;
-    use crate::cook::tests::sources;
+
+    fn noise(rng: &mut Rng, width: u32, height: u32) -> Image {
+        let pixels = (0..width * height)
+            .map(|_| rng.next_u32().to_le_bytes())
+            .collect();
+        Image::from_pixels(width, height, pixels).expect("one pixel per position")
+    }
+
+    /// A hand-built container covering multiple atlas pages, seasonal and
+    /// animated grounds, a ground pair, and sprites of different sizes.
+    fn sample_container() -> Container {
+        let mut rng = Rng::from_stream(3, &[]);
+        let page_w = BLOCK_COLUMNS * CELL;
+        let page_h = BLOCK_ROWS * CELL;
+        let page0 = Atlas::new(
+            noise(&mut rng, page_w, page_h),
+            noise(&mut rng, page_w / 2, page_h / 2),
+        );
+        let page1 = Atlas::new(noise(&mut rng, 64, 48), noise(&mut rng, 32, 24));
+        let block_region = Region {
+            atlas: 0,
+            x: PADDING,
+            y: PADDING,
+        };
+        let grounds = vec![
+            GroundEntry::new(
+                GroundId::new("water").expect("valid"),
+                vec![vec![block_region; 2]],
+            ),
+            GroundEntry::new(
+                GroundId::new("grass").expect("valid"),
+                vec![vec![block_region]; SEASONS],
+            ),
+        ];
+        let pairs = vec![GroundPairEntry::new(
+            GroundIndex(1),
+            GroundIndex(0),
+            vec![vec![block_region]; SEASONS],
+        )];
+        let sprites = vec![
+            SpriteEntry::new(
+                SpriteId::new("rock").expect("valid"),
+                [16, 16],
+                [0, 0],
+                vec![vec![Region {
+                    atlas: 1,
+                    x: PADDING,
+                    y: PADDING,
+                }]],
+            ),
+            SpriteEntry::new(
+                SpriteId::new("tree").expect("valid"),
+                [32, 32],
+                [8, 16],
+                vec![
+                    vec![Region {
+                        atlas: 1,
+                        x: 20,
+                        y: PADDING,
+                    }];
+                    SEASONS
+                ],
+            ),
+        ];
+        Container::new(vec![page0, page1], grounds, pairs, sprites)
+    }
 
     fn written(container: &Container) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -365,7 +430,7 @@ mod tests {
     /// out: the game would then draw other art than was cooked.
     #[test]
     fn a_container_reads_back_as_it_was_written() {
-        let container = cook(&sources(3)).expect("valid sources");
+        let container = sample_container();
         let read = read_container(&mut written(&container).as_slice()).expect("a valid file");
         assert_eq!(read, container);
     }
@@ -374,7 +439,7 @@ mod tests {
     /// layout it would misread.
     #[test]
     fn a_container_of_another_format_version_is_refused() {
-        let container = cook(&sources(3)).expect("valid sources");
+        let container = sample_container();
         let mut bytes = written(&container);
         let version = MAGIC.len()..MAGIC.len() + 4;
         bytes[version].copy_from_slice(&(FORMAT_VERSION + 1).to_le_bytes());

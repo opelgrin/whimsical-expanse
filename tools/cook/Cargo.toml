@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+expanse-assets = { path = "../../crates/assets" }
 expanse-core = { path = "../../crates/core" }
 
 [lints]

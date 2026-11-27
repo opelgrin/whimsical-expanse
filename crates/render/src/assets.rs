@@ -7,7 +7,7 @@
 use std::error::Error;
 use std::fmt;
 
-use expanse_cook::{Container, GroundIndex, Region, SEASONS, SpriteIndex};
+use expanse_assets::{Container, GroundIndex, Region, SEASONS, SpriteIndex};
 use expanse_core::asset::{GroundId, SpriteId};
 use expanse_core::hash::FixedHashMap;
 use expanse_terrain::BiomeTable;
@@ -321,7 +321,7 @@ impl Error for MissingAssets {}
 
 #[cfg(test)]
 mod tests {
-    use expanse_cook::{BLOCK_SIZE, Image, SourceGround, SourceSprite, Sources, cook};
+    use expanse_assets::{GroundEntry, PADDING, SpriteEntry};
     use expanse_terrain::{BiomeDefinition, FieldRanges, ObstacleKindDefinition};
 
     use super::*;
@@ -336,19 +336,22 @@ mod tests {
 
     /// A container holding the ground `grass` and the sprite `walker`.
     fn container() -> Container {
-        let sources = Sources {
-            grounds: vec![SourceGround {
-                id: ground_id("grass"),
-                variants: vec![vec![Image::new(BLOCK_SIZE[0], BLOCK_SIZE[1])]],
-            }],
-            pairs: Vec::new(),
-            sprites: vec![SourceSprite {
-                id: sprite("walker"),
-                anchor: [0, 0],
-                variants: vec![vec![Image::new(16, 16)]],
-            }],
+        let region = Region {
+            atlas: 0,
+            x: PADDING,
+            y: PADDING,
         };
-        cook(&sources).expect("valid sources")
+        Container::new(
+            Vec::new(),
+            vec![GroundEntry::new(ground_id("grass"), vec![vec![region]])],
+            Vec::new(),
+            vec![SpriteEntry::new(
+                sprite("walker"),
+                [16, 16],
+                [0, 0],
+                vec![vec![region]],
+            )],
+        )
     }
 
     /// One biome on `ground`, with one obstacle kind drawn as `obstacle`.

@@ -3,9 +3,9 @@
 
 use expanse_core::asset::{GroundId, SpriteId};
 
+use crate::TILE_SIZE;
 use crate::blob::Slot;
 use crate::image::Image;
-use crate::source::TILE_SIZE;
 
 /// The pixels around each tile and sprite that repeat its edge, so that
 /// sampling near an edge never reads a neighbouring region. Two pixels keep
@@ -46,8 +46,10 @@ impl Atlas {
     ///
     /// # Panics
     ///
-    /// Panics if `mipmap` is not half the dimensions of `image`.
-    pub(crate) fn new(image: Image, mipmap: Image) -> Self {
+    /// Panics if `image` does not have positive even dimensions or `mipmap` is
+    /// not half the dimensions of `image`.
+    #[must_use]
+    pub fn new(image: Image, mipmap: Image) -> Self {
         assert!(
             image.width() > 0
                 && image.height() > 0
@@ -61,13 +63,6 @@ impl Atlas {
             image.width(),
             image.height(),
         );
-        Self { image, mipmap }
-    }
-
-    /// Builds an atlas page from its full-size `image`, computing its
-    /// half-size mipmap level.
-    pub(crate) fn from_image(image: Image) -> Self {
-        let mipmap = image.downsample();
         Self { image, mipmap }
     }
 
@@ -106,6 +101,28 @@ pub struct GroundEntry {
 }
 
 impl GroundEntry {
+    /// Creates a ground entry from its logical ID and per-variant, per-frame
+    /// block regions (all on one atlas page).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `variants` has no frames or spans more than one atlas page.
+    #[must_use]
+    pub fn new(id: GroundId, variants: Vec<Vec<Region>>) -> Self {
+        let first = variants
+            .first()
+            .and_then(|frames| frames.first())
+            .expect("a ground has at least one variant and frame");
+        assert!(
+            variants
+                .iter()
+                .flatten()
+                .all(|region| region.atlas == first.atlas),
+            "every variant and frame of a ground must lie on one atlas page"
+        );
+        Self { id, variants }
+    }
+
     /// The logical ID.
     #[must_use]
     pub const fn id(&self) -> &GroundId {
@@ -145,6 +162,34 @@ pub struct GroundPairEntry {
 }
 
 impl GroundPairEntry {
+    /// Creates a ground-pair entry for `higher` over `lower`, with per-variant,
+    /// per-frame block regions on one atlas page.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `higher == lower`, if `variants` has no frames, or if its
+    /// regions span more than one atlas page.
+    #[must_use]
+    pub fn new(higher: GroundIndex, lower: GroundIndex, variants: Vec<Vec<Region>>) -> Self {
+        assert_ne!(higher, lower, "a ground cannot pair with itself");
+        let first = variants
+            .first()
+            .and_then(|frames| frames.first())
+            .expect("a ground pair has at least one variant and frame");
+        assert!(
+            variants
+                .iter()
+                .flatten()
+                .all(|region| region.atlas == first.atlas),
+            "every variant and frame of a ground pair must lie on one atlas page"
+        );
+        Self {
+            higher,
+            lower,
+            variants,
+        }
+    }
+
     /// The ground drawn on top.
     #[must_use]
     pub const fn higher(&self) -> GroundIndex {
@@ -180,6 +225,23 @@ pub struct SpriteEntry {
 }
 
 impl SpriteEntry {
+    /// Creates a sprite entry from its logical ID, pixel size, anchor offset,
+    /// and per-variant, per-frame regions.
+    #[must_use]
+    pub const fn new(
+        id: SpriteId,
+        size: [u32; 2],
+        anchor: [u32; 2],
+        variants: Vec<Vec<Region>>,
+    ) -> Self {
+        Self {
+            id,
+            size,
+            anchor,
+            variants,
+        }
+    }
+
     /// The logical ID.
     #[must_use]
     pub const fn id(&self) -> &SpriteId {
@@ -252,7 +314,10 @@ pub struct Container {
 }
 
 impl Container {
-    pub(crate) fn new(
+    /// Builds a container from its atlas pages, grounds, ground pairs, and
+    /// sprites.
+    #[must_use]
+    pub fn new(
         atlases: Vec<Atlas>,
         grounds: Vec<GroundEntry>,
         ground_pairs: Vec<GroundPairEntry>,
