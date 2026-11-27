@@ -80,6 +80,7 @@ fn main() -> ExitCode {
         title: WINDOW_TITLE.to_owned(),
         window_width: WINDOW_WIDTH,
         window_height: WINDOW_HEIGHT,
+        fullscreen: args.fullscreen,
         initial_speed: Speed::Normal,
         camera: CameraConfig {
             initial_pixels_per_tile: INITIAL_PIXELS_PER_TILE,
@@ -132,6 +133,7 @@ fn default_bindings() -> Bindings {
         .with(Button::Mouse(MouseButton::Middle), InputAction::DragPan)
         .with(Button::Key(KeyCode::Escape), InputAction::TogglePause)
         .with(Button::Key(KeyCode::F3), InputAction::ToggleOverlay)
+        .with(Button::Key(KeyCode::F11), InputAction::ToggleFullscreen)
 }
 
 /// What the command line chose.
@@ -139,12 +141,15 @@ struct Args {
     seed: u64,
     /// The cooked assets to load.
     assets: PathBuf,
+    /// Whether the window opens in fullscreen.
+    fullscreen: bool,
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut parsed = Args {
         seed: DEFAULT_SEED,
         assets: PathBuf::from(DEFAULT_ASSETS),
+        fullscreen: false,
     };
     while let Some(flag) = args.next() {
         let mut value = || args.next().ok_or_else(|| format!("`{flag}` needs a value"));
@@ -156,6 +161,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<Args, String> {
                     .map_err(|_| format!("`--seed` expects a whole number, got `{value}`"))?;
             }
             "--assets" => parsed.assets = PathBuf::from(value()?),
+            "--fullscreen" => parsed.fullscreen = true,
             _ => return Err(format!("unknown argument `{flag}`")),
         }
     }
@@ -169,5 +175,5 @@ fn report_error(message: &str) {
 
 #[expect(clippy::print_stderr, reason = "usage help goes to stderr")]
 fn report_usage() {
-    eprintln!("usage: expanse-game [--seed N] [--assets PATH]");
+    eprintln!("usage: expanse-game [--seed N] [--assets PATH] [--fullscreen]");
 }

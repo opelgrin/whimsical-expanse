@@ -24,6 +24,8 @@ pub enum InputAction {
     TogglePause,
     /// Show or hide the debug overlay.
     ToggleOverlay,
+    /// Switch the window between borderless fullscreen and windowed.
+    ToggleFullscreen,
 }
 
 /// A physical key or mouse button.
