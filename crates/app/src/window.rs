@@ -18,7 +18,7 @@ use winit::error::{EventLoopError, OsError};
 use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::PhysicalKey;
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::camera_controls::{CameraControls, CameraControlsConfig};
 use crate::genesis::{Genesis, GenesisError};
@@ -38,6 +38,9 @@ pub struct AppConfig {
     pub window_width: f64,
     /// Initial inner window height in logical pixels.
     pub window_height: f64,
+    /// Whether the window opens in borderless fullscreen. Leaving fullscreen
+    /// gives the initial window size.
+    pub fullscreen: bool,
     /// Initial simulation speed.
     pub initial_speed: Speed,
     /// Initial camera zoom and its limits. The camera opens on the world's
@@ -121,6 +124,7 @@ pub fn run(
         generation_error: None,
         title: config.title,
         initial_logical_size: LogicalSize::new(config.window_width, config.window_height),
+        initial_fullscreen: config.fullscreen,
         camera,
         input: InputState::new(config.input),
         camera_controls: CameraControls::new(config.camera_controls),
@@ -218,6 +222,7 @@ struct App {
     generation_error: Option<String>,
     title: String,
     initial_logical_size: LogicalSize<f64>,
+    initial_fullscreen: bool,
     camera: Camera,
     input: InputState,
     camera_controls: CameraControls,
@@ -314,6 +319,11 @@ impl App {
                         graphics.overlay.toggle();
                     }
                 }
+                InputAction::ToggleFullscreen => {
+                    if let Some(graphics) = &self.graphics {
+                        toggle_fullscreen(&graphics.window);
+                    }
+                }
                 InputAction::PanUp
                 | InputAction::PanDown
                 | InputAction::PanLeft
@@ -401,7 +411,8 @@ impl ApplicationHandler for App {
         }
         let attributes = Window::default_attributes()
             .with_title(self.title.clone())
-            .with_inner_size(self.initial_logical_size);
+            .with_inner_size(self.initial_logical_size)
+            .with_fullscreen(self.initial_fullscreen.then(borderless_fullscreen));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(err) => {
@@ -501,6 +512,28 @@ impl ApplicationHandler for App {
             _ => {}
         }
     }
+}
+
+/// Borderless fullscreen on the monitor the window is on.
+///
+/// Exclusive fullscreen, which changes the monitor's video mode, is not used:
+/// Wayland does not support it, and the camera already scales the art to any
+/// resolution.
+const fn borderless_fullscreen() -> Fullscreen {
+    Fullscreen::Borderless(None)
+}
+
+/// Switches `window` between borderless fullscreen and windowed.
+///
+/// The window, not the app, knows whether it is fullscreen, because the user
+/// can also leave fullscreen through the OS, such as with the macOS title bar
+/// button.
+fn toggle_fullscreen(window: &Window) {
+    let next = match window.fullscreen() {
+        Some(_) => None,
+        None => Some(borderless_fullscreen()),
+    };
+    window.set_fullscreen(next);
 }
 
 /// Translates a window event into what the input state needs, or `None` if
