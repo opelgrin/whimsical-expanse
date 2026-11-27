@@ -115,7 +115,7 @@ pub fn run(
         assets,
         pacer,
         display: TerrainDisplay {
-            view: TerrainView::Biomes,
+            view: TerrainView::Terrain,
             obstacles: false,
         },
         generation_error: None,
@@ -378,6 +378,7 @@ impl App {
             viewport,
             scale_factor,
             &interpolation,
+            &self.assets,
             &terrain_style,
             &overlay_frame.ui(),
         ) {
@@ -423,7 +424,7 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        renderer.upload_atlases(self.assets.container());
+        renderer.upload_assets(&self.assets);
         let atlases = renderer.atlas_textures();
         self.last_frame = now();
         window.request_redraw();

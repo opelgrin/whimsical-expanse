@@ -8,7 +8,9 @@ use expanse_terrain::{BiomeIndex, BiomeTable, Field, SEA_LEVEL, Tile};
 /// What colours the terrain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerrainView {
-    /// Each tile in its biome's map colour.
+    /// Textured ground tiles from the cooked atlas.
+    Terrain,
+    /// Each tile in its biome's flat map colour.
     Biomes,
     /// Each tile by the value of one field, on a colour ramp. Moisture and
     /// vegetation are ranked among land tiles, so water shows in one flat
@@ -95,7 +97,7 @@ impl MapPalette {
     /// The colour of `tile` in `view`.
     pub(crate) fn colour(&self, view: TerrainView, tile: &Tile) -> [f32; 4] {
         match view {
-            TerrainView::Biomes => self
+            TerrainView::Terrain | TerrainView::Biomes => self
                 .biomes
                 .get(usize::from(tile.biome.0))
                 .copied()

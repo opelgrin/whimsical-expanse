@@ -4,12 +4,17 @@
 
 mod assets;
 pub mod camera;
+mod chunk_cache;
 mod interpolation;
 mod palette;
 pub mod renderer;
 mod scene;
+mod terrain_mesh;
+mod terrain_pipeline;
 
-pub use assets::{AssetContent, AssetProblem, Assets, GroundRank, MissingAssets};
+pub use assets::{
+    AssetContent, AssetProblem, Assets, BlockId, GroundBlock, GroundRank, MissingAssets,
+};
 pub use camera::{Camera, CameraConfig, InvalidCameraConfig, ScreenPoint, Viewport, WorldPoint};
 pub use interpolation::Interpolation;
 pub use palette::{MapPalette, TerrainView};

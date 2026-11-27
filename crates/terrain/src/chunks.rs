@@ -1,6 +1,7 @@
 //! The terrain of the whole world, stored in shared chunks.
 
-use std::sync::Arc;
+use std::fmt;
+use std::sync::{Arc, Weak};
 
 use expanse_core::grid::{Grid, TilePos};
 use expanse_core::region::Regions;
@@ -8,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::climate::Latitude;
 use crate::obstacle::{Footprint, PlacementError};
-use crate::tile::{ObstacleCell, ObstacleIndex, Tile};
+use crate::tile::{BiomeIndex, ObstacleCell, ObstacleIndex, Tile};
 
 /// The width and height of a chunk, in tiles.
 ///
@@ -44,6 +45,28 @@ impl ChunkPos {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Chunk {
     tiles: Box<[Tile]>,
+}
+
+/// An opaque identity for one version of a chunk.
+///
+/// Two stamps compare equal if and only if they came from the same shared
+/// chunk allocation, so copy-on-write edits invalidate cached data derived
+/// from that chunk without pinning the old tiles in memory.
+#[derive(Clone)]
+pub struct ChunkStamp(Weak<Chunk>);
+
+impl PartialEq for ChunkStamp {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ChunkStamp {}
+
+impl fmt::Debug for ChunkStamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ChunkStamp").field(&self.0.as_ptr()).finish()
+    }
 }
 
 /// The terrain of a space: every tile, in chunks, and the latitude of each
@@ -137,6 +160,43 @@ impl Terrain {
     #[must_use]
     pub const fn grid(&self) -> Grid {
         self.grid
+    }
+
+    /// How many chunks wide the terrain is (east–west).
+    #[must_use]
+    pub const fn chunks_wide(&self) -> i32 {
+        self.world_width_chunks
+    }
+
+    /// How many chunks tall the terrain is (north–south).
+    #[must_use]
+    pub const fn chunks_high(&self) -> i32 {
+        self.grid.height() / CHUNK_SIZE
+    }
+
+    /// The identity of the chunk at `chunk`, wrapping `chunk.x` across the
+    /// seam, or `None` beyond the north and south edges.
+    #[must_use]
+    pub fn chunk_stamp(&self, chunk: ChunkPos) -> Option<ChunkStamp> {
+        if chunk.y < 0 || chunk.y >= self.chunks_high() {
+            return None;
+        }
+        let x = chunk.x.rem_euclid(self.world_width_chunks);
+        let index = to_index(chunk.y * self.world_width_chunks + x);
+        Some(ChunkStamp(Arc::downgrade(&self.chunks[index])))
+    }
+
+    /// Changes the biome and passability of `tile`, wrapping across the seam.
+    /// Copies only the chunk holding `tile` if shared. Returns `false` if
+    /// `tile` lies beyond the north or south edge.
+    pub fn set_biome(&mut self, tile: TilePos, biome: BiomeIndex, impassable: bool) -> bool {
+        if self.grid.canonical(tile).is_none() {
+            return false;
+        }
+        let target = self.tile_mut(tile);
+        target.biome = biome;
+        target.impassable = impassable;
+        true
     }
 
     /// The tile at `tile`, wrapping across the seam, or `None` beyond the
@@ -420,5 +480,33 @@ mod tests {
             .map(|(changed, kept)| Arc::ptr_eq(changed, kept))
             .collect();
         assert_eq!(shared, [true, false, true, true]);
+    }
+
+    /// Catches chunk stamps that fail to wrap east–west, return a stamp beyond
+    /// the north or south edges, or stay equal after a chunk is edited.
+    #[test]
+    fn chunk_stamps_wrap_east_west_and_change_only_for_edited_chunks() {
+        let mut terrain = terrain(2, 2);
+        let before = terrain.chunk_stamp(ChunkPos { x: 1, y: 0 }).expect("valid");
+        assert_eq!(
+            terrain.chunk_stamp(ChunkPos { x: -1, y: 0 }),
+            Some(before.clone())
+        );
+        assert_eq!(
+            terrain.chunk_stamp(ChunkPos { x: 3, y: 0 }),
+            Some(before.clone())
+        );
+        assert_eq!(terrain.chunk_stamp(ChunkPos { x: 0, y: -1 }), None);
+        assert_eq!(terrain.chunk_stamp(ChunkPos { x: 0, y: 2 }), None);
+
+        let untouched = terrain.chunk_stamp(ChunkPos { x: 0, y: 1 }).expect("valid");
+        assert!(terrain.set_biome(TilePos::new(CHUNK_SIZE + 1, 2), BiomeIndex(2), true));
+        assert!(!terrain.set_biome(TilePos::new(0, -1), BiomeIndex(2), true));
+
+        assert_ne!(terrain.chunk_stamp(ChunkPos { x: 1, y: 0 }), Some(before));
+        assert_eq!(
+            terrain.chunk_stamp(ChunkPos { x: 0, y: 1 }),
+            Some(untouched)
+        );
     }
 }

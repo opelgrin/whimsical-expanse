@@ -3,9 +3,12 @@
 use std::error::Error;
 use std::fmt;
 
+use crate::assets::Assets;
 use crate::camera::{Camera, CameraUniform, Viewport};
 use crate::interpolation::Interpolation;
+use crate::palette::TerrainView;
 use crate::scene::{QuadInstance, TerrainStyle, build_instances};
+use crate::terrain_pipeline::TerrainPipeline;
 
 /// Errors that can prevent creating or running the renderer.
 #[derive(Debug)]
@@ -82,7 +85,7 @@ pub struct UiFrame<'a> {
     pub pixels_per_point: f32,
 }
 
-/// Owns the `wgpu` surface, device, the instanced 2D quad pipeline, and the UI
+/// Owns the `wgpu` surface, device, the world rendering pipelines, and the UI
 /// renderer.
 pub struct Renderer<'window> {
     surface: wgpu::Surface<'window>,
@@ -90,6 +93,7 @@ pub struct Renderer<'window> {
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    terrain_pipeline: TerrainPipeline,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     instance_buffer: wgpu::Buffer,
@@ -155,6 +159,7 @@ impl<'window> Renderer<'window> {
 
         let (pipeline, camera_buffer, camera_bind_group) =
             create_quad_pipeline(&device, surface_config.format);
+        let terrain_pipeline = TerrainPipeline::new(&device, surface_config.format);
         let instance_buffer = create_instance_buffer(&device, INITIAL_INSTANCE_CAPACITY);
         let ui_painter = egui_wgpu::Renderer::new(
             &device,
@@ -168,6 +173,7 @@ impl<'window> Renderer<'window> {
             queue,
             surface_config,
             pipeline,
+            terrain_pipeline,
             camera_buffer,
             camera_bind_group,
             instance_buffer,
@@ -178,43 +184,43 @@ impl<'window> Renderer<'window> {
         })
     }
 
-    /// Uploads the atlas pages of `container`, replacing any uploaded before,
-    /// and registers them with the UI.
-    pub fn upload_atlases(&mut self, container: &expanse_cook::Container) {
+    /// Uploads the atlas pages (with their mipmap level) and block table of
+    /// `assets`, replacing any uploaded before, and registers the base atlas
+    /// pages with the UI.
+    pub fn upload_assets(&mut self, assets: &Assets) {
         for atlas in self.atlases.drain(..) {
             self.ui_painter.free_texture(&atlas.shown.texture_id);
         }
-        for (index, page) in container.atlases().iter().enumerate() {
-            let size = wgpu::Extent3d {
-                width: page.width(),
-                height: page.height(),
-                depth_or_array_layers: 1,
-            };
+        let mut atlas_views = Vec::with_capacity(assets.container().atlases().len());
+        for (index, page) in assets.container().atlases().iter().enumerate() {
             let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(&format!("atlas {index}")),
-                size,
-                mip_level_count: 1,
+                size: wgpu::Extent3d {
+                    width: page.width(),
+                    height: page.height(),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 2,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            let bytes: Vec<u8> = page.pixels().iter().flatten().copied().collect();
-            self.queue.write_texture(
-                texture.as_image_copy(),
-                &bytes,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * page.width()),
-                    rows_per_image: None,
-                },
-                size,
-            );
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            write_mip_level(&self.queue, &texture, 0, page.image());
+            write_mip_level(&self.queue, &texture, 1, page.mipmap());
+
+            let full_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            atlas_views.push(full_view);
+
+            let base_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                ..wgpu::TextureViewDescriptor::default()
+            });
             let texture_id = self.ui_painter.register_native_texture(
                 &self.device,
-                &view,
+                &base_view,
                 wgpu::FilterMode::Nearest,
             );
             self.atlases.push(Atlas {
@@ -225,6 +231,13 @@ impl<'window> Renderer<'window> {
                 },
             });
         }
+        self.terrain_pipeline.set_assets(
+            &self.device,
+            &self.queue,
+            &self.camera_buffer,
+            assets,
+            &atlas_views,
+        );
     }
 
     /// The atlas pages uploaded, as the UI can show them.
@@ -256,12 +269,17 @@ impl<'window> Renderer<'window> {
     /// Returns [`RenderError::SurfaceValidation`] if acquiring a frame reports
     /// a validation error. Lost or outdated surfaces are reconfigured, and
     /// timeouts and occluded windows skip the frame; none of these is an error.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each frame input is a distinct borrowed view"
+    )]
     pub fn render(
         &mut self,
         camera: &Camera,
         viewport: Viewport,
         scale_factor: f32,
         interpolation: &Interpolation<'_>,
+        assets: &Assets,
         terrain: &TerrainStyle<'_>,
         ui: &UiFrame<'_>,
     ) -> Result<(), RenderError> {
@@ -271,7 +289,15 @@ impl<'window> Renderer<'window> {
                     .update_texture(&self.device, &self.queue, *id, delta);
             }
         }
-        let result = self.draw(camera, viewport, scale_factor, interpolation, terrain, ui);
+        let result = self.draw(
+            camera,
+            viewport,
+            scale_factor,
+            interpolation,
+            assets,
+            terrain,
+            ui,
+        );
         // Freed only after the frame that may still use them is submitted.
         for id in &ui.textures_delta.free {
             self.ui_painter.free_texture(id);
@@ -279,12 +305,17 @@ impl<'window> Renderer<'window> {
         result
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each frame input is a distinct borrowed view"
+    )]
     fn draw(
         &mut self,
         camera: &Camera,
         viewport: Viewport,
         scale_factor: f32,
         interpolation: &Interpolation<'_>,
+        assets: &Assets,
         terrain: &TerrainStyle<'_>,
         ui: &UiFrame<'_>,
     ) -> Result<(), RenderError> {
@@ -310,6 +341,17 @@ impl<'window> Renderer<'window> {
         let uniform = camera.uniform(viewport, scale_factor);
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
+
+        let textured = terrain.display.view == TerrainView::Terrain;
+        if textured && let Some(visible) = camera.visible_tiles(viewport) {
+            self.terrain_pipeline.prepare(
+                &self.device,
+                &self.queue,
+                visible,
+                &interpolation.current.terrain,
+                assets,
+            );
+        }
 
         build_instances(
             &mut self.instances,
@@ -353,6 +395,10 @@ impl<'window> Renderer<'window> {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+
+            if textured {
+                self.terrain_pipeline.draw(&mut pass);
+            }
 
             if let Ok(instance_count) = u32::try_from(self.instances.len())
                 && instance_count > 0
@@ -542,6 +588,34 @@ fn create_quad_pipeline(
     });
 
     (pipeline, camera_buffer, camera_bind_group)
+}
+
+fn write_mip_level(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    mip_level: u32,
+    image: &expanse_cook::Image,
+) {
+    let bytes: Vec<u8> = image.pixels().iter().flatten().copied().collect();
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * image.width()),
+            rows_per_image: None,
+        },
+        wgpu::Extent3d {
+            width: image.width(),
+            height: image.height(),
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {

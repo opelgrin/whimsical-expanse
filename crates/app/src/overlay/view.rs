@@ -1,7 +1,5 @@
 //! The view panel: what colours the terrain, and the obstacle layer.
 
-use std::iter;
-
 use expanse_render::{TerrainDisplay, TerrainView};
 use expanse_terrain::Field;
 
@@ -12,7 +10,10 @@ pub(super) fn show(ui: &mut egui::Ui, display: TerrainDisplay, requests: &mut Ve
         .selected_text(view_name(display.view))
         .show_ui(ui, |ui| {
             let fields = Field::ALL.into_iter().map(TerrainView::Field);
-            for choice in iter::once(TerrainView::Biomes).chain(fields) {
+            let choices = [TerrainView::Terrain, TerrainView::Biomes]
+                .into_iter()
+                .chain(fields);
+            for choice in choices {
                 let selected = display.view == choice;
                 if ui.selectable_label(selected, view_name(choice)).clicked() && !selected {
                     requests.push(OverlayRequest::SetDisplay(TerrainDisplay {
@@ -33,6 +34,7 @@ pub(super) fn show(ui: &mut egui::Ui, display: TerrainDisplay, requests: &mut Ve
 
 const fn view_name(view: TerrainView) -> &'static str {
     match view {
+        TerrainView::Terrain => "Terrain",
         TerrainView::Biomes => "Biomes",
         TerrainView::Field(field) => field_name(field),
     }
