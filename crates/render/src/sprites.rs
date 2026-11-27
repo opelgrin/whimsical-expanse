@@ -240,6 +240,19 @@ mod tests {
 
     use super::*;
 
+    /// Where the `tall` obstacle sprite sits on its atlas page. It is 4×5 tiles,
+    /// anchored 1 tile right of and 3 tiles below its top-left corner, so it
+    /// overhangs its anchor tile by 1 tile left, 2 right, 3 up and 1 down.
+    const TALL: Region = Region {
+        atlas: 0,
+        x: 10,
+        y: 20,
+    };
+
+    /// Where the 1×1 `walker` entity sprite sits, on the atlas page passed to
+    /// [`build_assets`].
+    const WALKER_X: u32 = 100;
+
     fn ground_id(name: &str) -> GroundId {
         GroundId::new(name).expect("valid ground name")
     }
@@ -248,40 +261,20 @@ mod tests {
         SpriteId::new(name).expect("valid sprite name")
     }
 
-    /// A sprite fixture: `(name, size_px, anchor_px, region)`.
-    struct TestSprite<'a> {
-        name: &'a str,
-        size: [u32; 2],
-        anchor: [u32; 2],
-        region: Region,
-        footprint: &'a [(i32, i32)],
-    }
-
-    /// Builds resolved assets and a matching biome table with one ground, the
-    /// given obstacle sprites, and a 1×1 `walker` entity sprite on `walker_region`.
-    fn build_assets(obstacles: &[TestSprite<'_>], walker_region: Region) -> (BiomeTable, Assets) {
+    /// Builds a biome table with one obstacle kind, drawn with the `tall`
+    /// sprite and covering `footprint` beside its anchor, and resolved assets
+    /// whose `walker` entity sprite is on atlas page `walker_atlas`.
+    fn build_assets(footprint: &[(i32, i32)], walker_atlas: u16) -> (BiomeTable, Assets) {
         let ground_region = Region {
             atlas: 0,
             x: PADDING,
             y: PADDING,
         };
-        let mut sprites: Vec<SpriteEntry> = obstacles
-            .iter()
-            .map(|spec| {
-                SpriteEntry::new(
-                    sprite_id(spec.name),
-                    spec.size,
-                    spec.anchor,
-                    vec![vec![spec.region]],
-                )
-            })
-            .collect();
-        sprites.push(SpriteEntry::new(
-            sprite_id("walker"),
-            [TILE_SIZE, TILE_SIZE],
-            [0, 0],
-            vec![vec![walker_region]],
-        ));
+        let walker = Region {
+            atlas: walker_atlas,
+            x: WALKER_X,
+            y: TALL.y,
+        };
         let container = Container::new(
             Vec::new(),
             vec![GroundEntry::new(
@@ -289,20 +282,16 @@ mod tests {
                 vec![vec![ground_region]],
             )],
             Vec::new(),
-            sprites,
+            vec![
+                SpriteEntry::new(sprite_id("tall"), [64, 80], [16, 48], vec![vec![TALL]]),
+                SpriteEntry::new(
+                    sprite_id("walker"),
+                    [TILE_SIZE, TILE_SIZE],
+                    [0, 0],
+                    vec![vec![walker]],
+                ),
+            ],
         );
-        let obstacle_defs: Vec<ObstacleKindDefinition> = obstacles
-            .iter()
-            .map(|spec| ObstacleKindDefinition {
-                name: spec.name.to_owned(),
-                footprint: spec
-                    .footprint
-                    .iter()
-                    .map(|&(dx, dy)| TileOffset::new(dx, dy))
-                    .collect(),
-                sprite: sprite_id(spec.name),
-            })
-            .collect();
         let table = BiomeTable::new(
             vec![BiomeDefinition {
                 name: "plain".to_owned(),
@@ -312,7 +301,14 @@ mod tests {
                 impassable: false,
                 obstacles: Vec::new(),
             }],
-            obstacle_defs,
+            vec![ObstacleKindDefinition {
+                name: "tall".to_owned(),
+                footprint: footprint
+                    .iter()
+                    .map(|&(dx, dy)| TileOffset::new(dx, dy))
+                    .collect(),
+                sprite: sprite_id("tall"),
+            }],
         )
         .expect("valid table");
         let content = AssetContent {
@@ -323,6 +319,7 @@ mod tests {
         (table, assets)
     }
 
+    /// A world one chunk (32×32 tiles) in size, without obstacles.
     fn empty_terrain() -> Terrain {
         let fields = Fields {
             elevation: 0,
@@ -334,24 +331,41 @@ mod tests {
         Terrain::new(1, 1, |_| Tile::new(fields, BiomeIndex(0), false)).expect("valid terrain")
     }
 
-    fn camera(terrain: &Terrain, x: f32, y: f32) -> Camera {
-        let config = CameraConfig {
-            initial_pixels_per_tile: 10.0,
-            min_pixels_per_tile: 5.0,
-            max_pixels_per_tile: 40.0,
-        };
-        Camera::new(config, terrain.grid(), WorldPoint::new(x, y)).expect("valid camera")
+    /// Places a single-tile obstacle of the only kind at each of `anchors`.
+    fn place(terrain: &mut Terrain, anchors: &[(i32, i32)]) {
+        for &(x, y) in anchors {
+            terrain
+                .place_obstacle(
+                    TilePos::new(x, y),
+                    ObstacleIndex(0),
+                    &Footprint::single_tile(),
+                )
+                .expect("free tile");
+        }
     }
 
-    fn standing(id: u32, tile: TilePos) -> EntityView {
-        EntityView {
-            id: EntityId(id),
-            motion: Motion {
-                from: tile,
-                to: tile,
-                start: Tick::ZERO,
-                end: Tick::new(2),
-            },
+    /// A snapshot of `terrain` with an entity standing still on each of
+    /// `entities`.
+    fn snapshot(terrain: &Terrain, entities: &[(i32, i32)]) -> Snapshot {
+        let entities = (0..)
+            .zip(entities)
+            .map(|(id, &(x, y))| {
+                let tile = TilePos::new(x, y);
+                EntityView {
+                    id: EntityId(id),
+                    motion: Motion {
+                        from: tile,
+                        to: tile,
+                        start: Tick::ZERO,
+                        end: Tick::new(2),
+                    },
+                }
+            })
+            .collect();
+        Snapshot {
+            tick: Tick::ZERO,
+            terrain: terrain.clone(),
+            entities,
         }
     }
 
@@ -363,306 +377,146 @@ mod tests {
         }
     }
 
-    /// Catches culling that drops sprites anchored outside the viewport whose
-    /// image reaches into it (including across the east–west seam), or fails to
-    /// cull sprites anchored strictly beyond the largest overhang.
+    /// A camera at 10 pixels per tile centred on `(x, y)`.
+    fn camera(terrain: &Terrain, x: f32, y: f32) -> Camera {
+        let config = CameraConfig {
+            initial_pixels_per_tile: 10.0,
+            min_pixels_per_tile: 5.0,
+            max_pixels_per_tile: 40.0,
+        };
+        Camera::new(config, terrain.grid(), WorldPoint::new(x, y)).expect("valid camera")
+    }
+
+    /// The sprites drawn for `snapshot` through a camera centred on `(x, y)`
+    /// with a `size`×`size` pixel viewport, obstacles included.
+    fn draw(assets: &Assets, snapshot: &Snapshot, (x, y): (f32, f32), size: f32) -> SpriteScene {
+        let mut scene = SpriteScene::default();
+        scene.build(
+            &camera(&snapshot.terrain, x, y),
+            Viewport::new(size, size),
+            &still(snapshot),
+            assets,
+            true,
+        );
+        scene
+    }
+
+    /// A drawn instance, as its sprite and the tile it is anchored at.
+    #[derive(Debug, PartialEq)]
+    enum Drawn {
+        Tall([f32; 2]),
+        Walker([f32; 2]),
+    }
+
+    /// The instances of `scene` in draw order.
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::float_cmp,
+        reason = "texel coordinates are small integers, exact in f32"
+    )]
+    fn drawn(scene: &SpriteScene) -> Vec<Drawn> {
+        let tall = [TALL.x as f32, TALL.y as f32];
+        scene
+            .instances
+            .iter()
+            .map(|instance| {
+                let [x, y] = instance.origin;
+                if instance.texel_origin == tall {
+                    Drawn::Tall([x + 1.0, y + 3.0])
+                } else {
+                    Drawn::Walker([x, y])
+                }
+            })
+            .collect()
+    }
+
+    /// Catches culling that drops a sprite anchored outside the view whose
+    /// image reaches into it, uses the wrong side's overhang, stops at the
+    /// east–west seam, or keeps sprites anchored beyond the largest overhang.
     #[test]
     fn a_sprite_anchored_outside_the_view_but_reaching_into_it_is_drawn() {
-        // An asymmetric sprite with distinct overhangs on every side:
-        // left = 16 px (1 tile), right = 32 px (2 tiles),
-        // up = 32 px (2 tiles), down = 16 px (1 tile).
-        // Total size: 64×64 (4×4 tiles), anchor at (16, 32).
-        let big_region = Region {
-            atlas: 0,
-            x: 10,
-            y: 20,
-        };
-        let walker_region = Region {
-            atlas: 0,
-            x: 100,
-            y: 20,
-        };
-        let (_, assets) = build_assets(
-            &[TestSprite {
-                name: "big",
-                size: [64, 64],
-                anchor: [16, 32],
-                region: big_region,
-                footprint: &[],
-            }],
-            walker_region,
-        );
-
+        let (_, assets) = build_assets(&[], 0);
+        // A 60×60 viewport centred on (3, 15) shows tiles x in 0..=5 and
+        // y in 12..=17. With the `tall` overhangs, anchors at x in -2..=6 and
+        // y in 11..=20 reach into it; x = -2 is canonical column 30.
+        let reaching = [(30, 15), (6, 15), (3, 11), (3, 20)];
+        let beyond = [(29, 15), (7, 15), (3, 10), (3, 21)];
         let mut terrain = empty_terrain();
-        // Viewport 60×60 at 10 px/tile around (15.0, 15.0) spans x in [12, 18),
-        // y in [12, 18) -> visible tiles 12..=17 on both axes.
-        // With overhang (left=1, right=2, up=2, down=1), the reaching anchor
-        // bounds are x in 10..=18, y in 11..=19.
-        let reaching = [
-            TilePos::new(10, 15), // west edge: right overhang of 2 reaches x=12
-            TilePos::new(18, 15), // east edge: left overhang of 1 reaches x=17
-            TilePos::new(15, 11), // north edge: down overhang of 1 reaches y=12
-            TilePos::new(15, 19), // south edge: up overhang of 2 reaches y=17
-        ];
-        let culled = [
-            TilePos::new(9, 15),  // too far west
-            TilePos::new(19, 15), // too far east
-            TilePos::new(15, 10), // too far north
-            TilePos::new(15, 20), // too far south
-        ];
-        for pos in reaching.into_iter().chain(culled) {
-            terrain
-                .place_obstacle(pos, ObstacleIndex(0), &Footprint::single_tile())
-                .expect("free tile");
-        }
+        place(&mut terrain, &reaching);
+        place(&mut terrain, &beyond);
+        // Walkers have no overhang but are culled to the same range.
+        let all: Vec<_> = reaching.into_iter().chain(beyond).collect();
 
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: vec![
-                standing(1, TilePos::new(15, 10)), // north of expanded y (11..=19): culled
-                standing(2, TilePos::new(15, 11)), // north edge of expanded y: drawn
-                standing(3, TilePos::new(15, 19)), // south edge of expanded y: drawn
-                standing(4, TilePos::new(15, 20)), // south of expanded y: culled
-                standing(5, TilePos::new(9, 15)),  // west of expanded x (10..=18): culled
-                standing(6, TilePos::new(10, 15)), // west edge of expanded x: drawn
-                standing(7, TilePos::new(18, 15)), // east edge of expanded x: drawn
-                standing(8, TilePos::new(19, 15)), // east of expanded x: culled
-            ],
-        };
-        let mut scene = SpriteScene::default();
-        scene.build(
-            &camera(&terrain, 15.0, 15.0),
-            Viewport::new(60.0, 60.0),
-            &still(&snapshot),
-            &assets,
-            true,
-        );
+        let scene = draw(&assets, &snapshot(&terrain, &all), (3.0, 15.0), 60.0);
 
-        let drawn_anchors: Vec<([f32; 2], f32)> = scene
-            .instances
-            .iter()
-            .map(|inst| {
-                let anchor = if inst.texel_origin[0] < 50.0 {
-                    [inst.origin[0] + 1.0, inst.origin[1] + 2.0]
-                } else {
-                    inst.origin
-                };
-                (anchor, inst.texel_origin[0])
-            })
-            .collect();
-        // Each reaching position draws the obstacle first, then the entity on
-        // the exact same anchor, sorted by (y, x):
-        // (15, 11), (10, 15), (18, 15), (15, 19).
         assert_eq!(
-            drawn_anchors,
-            vec![
-                ([15.0, 11.0], 10.0),
-                ([15.0, 11.0], 100.0),
-                ([10.0, 15.0], 10.0),
-                ([10.0, 15.0], 100.0),
-                ([18.0, 15.0], 10.0),
-                ([18.0, 15.0], 100.0),
-                ([15.0, 19.0], 10.0),
-                ([15.0, 19.0], 100.0),
+            drawn(&scene),
+            [
+                Drawn::Tall([3.0, 11.0]),
+                Drawn::Walker([3.0, 11.0]),
+                Drawn::Tall([-2.0, 15.0]),
+                Drawn::Walker([-2.0, 15.0]),
+                Drawn::Tall([6.0, 15.0]),
+                Drawn::Walker([6.0, 15.0]),
+                Drawn::Tall([3.0, 20.0]),
+                Drawn::Walker([3.0, 20.0]),
             ]
         );
     }
 
-    /// Catches culling that stops at column 0 instead of checking overhanging
-    /// sprites anchored just west of the east–west seam.
+    /// Catches sorting by the top of the image instead of the anchor, sorting
+    /// by `x` before `y`, or drawing an entity before the obstacle anchored on
+    /// its own tile.
     #[test]
-    fn a_sprite_anchored_across_the_seam_whose_overhang_reaches_the_view_is_drawn() {
-        let (_, assets) = build_assets(
-            &[TestSprite {
-                name: "big",
-                size: [64, 64],
-                anchor: [16, 32],
-                region: Region {
-                    atlas: 0,
-                    x: 10,
-                    y: 20,
-                },
-                footprint: &[],
-            }],
-            Region {
-                atlas: 0,
-                x: 100,
-                y: 20,
-            },
-        );
-        // Camera at (3.0, 15.0), viewport 60×60 -> visible x in 0..=5.
-        // An obstacle anchored at canonical x = width - 2 (unwrapped x = -2)
-        // has a right overhang of 2 tiles, reaching column 0 across the seam.
+    fn sprites_are_drawn_by_anchor_row_then_column_obstacles_first() {
+        let (_, assets) = build_assets(&[], 0);
         let mut terrain = empty_terrain();
-        let width = terrain.grid().width();
-        terrain
-            .place_obstacle(
-                TilePos::new(width - 2, 15),
-                ObstacleIndex(0),
-                &Footprint::single_tile(),
-            )
-            .expect("free tile");
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: Vec::new(),
-        };
-        let mut scene = SpriteScene::default();
-        scene.build(
-            &camera(&terrain, 3.0, 15.0),
-            Viewport::new(60.0, 60.0),
-            &still(&snapshot),
-            &assets,
-            true,
-        );
-        assert_eq!(scene.instances.len(), 1);
-        assert_eq!(scene.instances[0].origin, [-3.0, 13.0]);
-    }
+        place(&mut terrain, &[(10, 10)]);
+        // The `tall` image reaches three rows north of its anchor. A walker one
+        // row north stands behind the obstacle, so it is drawn first.
+        let walkers = [(10, 11), (11, 10), (10, 10), (10, 9), (9, 10)];
 
-    /// Catches inverted `y` sorting, sorting by sprite top instead of anchor `y`,
-    /// or unstable tie-breaking between obstacles and entities.
-    #[test]
-    fn entities_sort_before_obstacles_north_of_anchor_and_after_those_south() {
-        let tree_region = Region {
-            atlas: 0,
-            x: 10,
-            y: 20,
-        };
-        let walker_region = Region {
-            atlas: 0,
-            x: 100,
-            y: 20,
-        };
-        // A 3×3 tree anchored at (1, 2): its top is two tiles north of its
-        // anchor, so sorting by quad origin instead of anchor `y` would draw an
-        // entity one tile north of the trunk in front of the tree.
-        let (_, assets) = build_assets(
-            &[TestSprite {
-                name: "tree",
-                size: [48, 48],
-                anchor: [16, 32],
-                region: tree_region,
-                footprint: &[],
-            }],
-            walker_region,
-        );
+        let scene = draw(&assets, &snapshot(&terrain, &walkers), (10.0, 10.0), 120.0);
 
-        let mut terrain = empty_terrain();
-        terrain
-            .place_obstacle(
-                TilePos::new(10, 10),
-                ObstacleIndex(0),
-                &Footprint::single_tile(),
-            )
-            .expect("free tile");
-
-        // Three entities: north of the tree's anchor (inside its canopy at y=9),
-        // at the same row to its west (x=9, y=10) and east (x=11, y=10), and
-        // south of its anchor (y=11), plus two entities sharing the exact same
-        // tile to check EntityId tie-breaking.
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: vec![
-                standing(5, TilePos::new(10, 11)),
-                standing(2, TilePos::new(10, 9)),
-                standing(4, TilePos::new(11, 10)),
-                standing(3, TilePos::new(9, 10)),
-                standing(9, TilePos::new(10, 11)),
-            ],
-        };
-
-        let mut scene = SpriteScene::default();
-        scene.build(
-            &camera(&terrain, 10.0, 10.0),
-            Viewport::new(120.0, 120.0),
-            &still(&snapshot),
-            &assets,
-            true,
-        );
-
-        // Expected draw order:
-        // 1. Entity 2 at (10, 9)   — north of anchor (under tree canopy)
-        // 2. Entity 3 at (9, 10)   — same y, west of anchor
-        // 3. Tree     at (10, 10)  — anchor (10, 10), origin (9, 8)
-        // 4. Entity 4 at (11, 10)  — same y, east of anchor
-        // 5. Entity 5 at (10, 11)  — south of anchor, lower EntityId
-        // 6. Entity 9 at (10, 11)  — south of anchor, higher EntityId
-        let summary: Vec<([f32; 2], f32)> = scene
-            .instances
-            .iter()
-            .map(|inst| (inst.origin, inst.texel_origin[0]))
-            .collect();
         assert_eq!(
-            summary,
-            vec![
-                ([10.0, 9.0], 100.0),
-                ([9.0, 10.0], 100.0),
-                ([9.0, 8.0], 10.0),
-                ([11.0, 10.0], 100.0),
-                ([10.0, 11.0], 100.0),
-                ([10.0, 11.0], 100.0),
+            drawn(&scene),
+            [
+                Drawn::Walker([10.0, 9.0]),
+                Drawn::Walker([9.0, 10.0]),
+                Drawn::Tall([10.0, 10.0]),
+                Drawn::Walker([10.0, 10.0]),
+                Drawn::Walker([11.0, 10.0]),
+                Drawn::Walker([10.0, 11.0]),
             ]
         );
     }
 
-    /// Catches multi-tile obstacles being drawn once per footprint tile instead
-    /// of once at their anchor, or sprites drawn from the wrong anchor offset.
+    /// Catches a multi-tile obstacle drawn once per footprint tile instead of
+    /// once at its anchor, a wrong size or atlas region, and a reused scene
+    /// that keeps sprites from its previous build.
     #[test]
     fn a_multi_tile_obstacle_is_drawn_once_at_its_anchor() {
-        let boulder_region = Region {
-            atlas: 0,
-            x: 12,
-            y: 24,
-        };
-        let walker_region = Region {
-            atlas: 0,
-            x: 80,
-            y: 24,
-        };
-        let (table, assets) = build_assets(
-            &[TestSprite {
-                name: "boulder",
-                size: [32, 32],
-                anchor: [0, 16],
-                region: boulder_region,
-                footprint: &[(0, -1), (1, -1), (1, 0)],
-            }],
-            walker_region,
-        );
+        let (table, assets) = build_assets(&[(0, -1), (1, -1), (1, 0)], 0);
         let mut terrain = empty_terrain();
         let footprint = table.obstacle_kind(ObstacleIndex(0)).footprint();
         terrain
             .place_obstacle(TilePos::new(10, 10), ObstacleIndex(0), footprint)
             .expect("free tiles");
+        let snapshot = snapshot(&terrain, &[]);
 
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: Vec::new(),
-        };
-        let mut scene = SpriteScene::default();
-        scene.build(
-            &camera(&terrain, 10.0, 10.0),
-            Viewport::new(100.0, 100.0),
-            &still(&snapshot),
-            &assets,
-            true,
-        );
+        let mut scene = draw(&assets, &snapshot, (10.0, 10.0), 100.0);
 
-        assert_eq!(scene.instances.len(), 1);
         assert_eq!(
-            scene.instances[0],
-            SpriteInstance {
-                origin: [10.0, 9.0],
-                size: [2.0, 2.0],
-                texel_origin: [12.0, 24.0],
-                texel_size: [32.0, 32.0],
-            }
+            scene.instances,
+            [SpriteInstance {
+                origin: [9.0, 7.0],
+                size: [4.0, 5.0],
+                texel_origin: [10.0, 20.0],
+                texel_size: [64.0, 80.0],
+            }]
         );
 
-        // In debug views (`include_obstacles = false`), obstacle sprites are omitted.
+        // Debug views leave obstacles out.
         scene.build(
             &camera(&terrain, 10.0, 10.0),
             Viewport::new(100.0, 100.0),
@@ -678,66 +532,22 @@ mod tests {
     /// painter's order) or fails to coalesce adjacent sprites on the same page.
     #[test]
     fn batches_preserve_sorted_order_across_atlas_pages() {
-        let (_, assets) = build_assets(
-            &[TestSprite {
-                name: "rock",
-                size: [16, 16],
-                anchor: [0, 0],
-                region: Region {
-                    atlas: 0,
-                    x: 4,
-                    y: 4,
-                },
-                footprint: &[],
-            }],
-            Region {
-                atlas: 1,
-                x: 8,
-                y: 8,
-            },
-        );
+        let (_, assets) = build_assets(&[], 1);
         let mut terrain = empty_terrain();
-        terrain
-            .place_obstacle(
-                TilePos::new(10, 8),
-                ObstacleIndex(0),
-                &Footprint::single_tile(),
-            )
-            .expect("free");
-        terrain
-            .place_obstacle(
-                TilePos::new(10, 9),
-                ObstacleIndex(0),
-                &Footprint::single_tile(),
-            )
-            .expect("free");
-        terrain
-            .place_obstacle(
-                TilePos::new(10, 11),
-                ObstacleIndex(0),
-                &Footprint::single_tile(),
-            )
-            .expect("free");
+        // In draw order: two obstacles on page 0, a walker on page 1, then one
+        // more obstacle on page 0.
+        place(&mut terrain, &[(10, 8), (10, 9), (10, 11)]);
 
-        // Two rocks on atlas 0 (y=8, 9), then entity on atlas 1 (y=10), then
-        // one rock on atlas 0 (y=11) -> 3 batches: [atlas 0 × 2, atlas 1 × 1, atlas 0 × 1].
-        let snapshot = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: vec![standing(1, TilePos::new(10, 10))],
-        };
-        let mut scene = SpriteScene::default();
-        scene.build(
-            &camera(&terrain, 10.0, 10.0),
-            Viewport::new(100.0, 100.0),
-            &still(&snapshot),
+        let scene = draw(
             &assets,
-            true,
+            &snapshot(&terrain, &[(10, 10)]),
+            (10.0, 10.0),
+            100.0,
         );
 
         assert_eq!(
             scene.batches,
-            vec![
+            [
                 SpriteBatch {
                     atlas: 0,
                     start: 0,
@@ -757,121 +567,33 @@ mod tests {
         );
     }
 
-    /// Catches entities drawn at a stale snapshot position instead of the
-    /// interpolated one, entities missing on seam wraps, or stale sprites left
-    /// behind when rebuilding the reused scene buffer.
+    /// Catches seam repeats that are missing, duplicated or shifted, and edge
+    /// checks that drop a sprite partly inside the range or keep one that only
+    /// touches it.
     #[test]
-    fn entities_interpolate_wrap_across_the_seam_and_clear_on_rebuild() {
-        let (_, assets) = build_assets(
-            &[],
-            Region {
-                atlas: 0,
-                x: 2,
-                y: 2,
-            },
-        );
-        let terrain = empty_terrain();
-        let east_edge = terrain.grid().width() - 1;
-        let at_tick = |tick| Snapshot {
-            tick: Tick::new(tick),
-            terrain: terrain.clone(),
-            entities: vec![EntityView {
-                id: EntityId(0),
-                motion: Motion {
-                    from: TilePos::new(east_edge, 4),
-                    to: TilePos::new(0, 4),
-                    start: Tick::ZERO,
-                    end: Tick::new(2),
-                },
-            }],
+    fn repeats_are_the_columns_where_a_sprite_overlaps_the_range() {
+        let range = |min_x, max_x| VisibleTileRange {
+            min_x,
+            max_x,
+            min_y: 0,
+            max_y: 0,
         };
-        let (previous, current) = (at_tick(0), at_tick(1));
-        // Progress 0.5 between tick 0 (east_edge) and tick 1 (east_edge + 0.5)
-        // places the entity at canonical east_edge + 0.25.
-        let interpolation = Interpolation {
-            previous: &previous,
-            current: &current,
-            progress: 0.5,
-        };
-        let mut scene = SpriteScene::default();
-        // Viewport 680×40 at 10 px/tile centred on the seam spans x in [-34, 34]:
-        // the entity shows at -32.75, -0.75, and 31.25.
-        scene.build(
-            &camera(&terrain, 0.0, 4.5),
-            Viewport::new(680.0, 40.0),
-            &interpolation,
-            &assets,
-            true,
-        );
-        let xs: Vec<f32> = scene.instances.iter().map(|inst| inst.origin[0]).collect();
-        assert_eq!(xs, vec![-32.75, -0.75, 31.25]);
-
-        // Check a standing entity at `east_edge` when `min_x == 0`: its
-        // west-of-seam repeat at `-1.0` touches `0.0` without overlapping and
-        // must advance to `east_edge` (31.0), not drop or wrap wrongly.
-        let at_east = Snapshot {
-            tick: Tick::ZERO,
-            terrain: terrain.clone(),
-            entities: vec![standing(0, TilePos::new(east_edge, 4))],
-        };
-        // Camera at (18.0, 4.5), viewport 360×40 at 10 px/tile -> visible x in 0..=35.
-        scene.build(
-            &camera(&terrain, 18.0, 4.5),
-            Viewport::new(360.0, 40.0),
-            &still(&at_east),
-            &assets,
-            true,
-        );
-        let east_xs: Vec<f32> = scene.instances.iter().map(|inst| inst.origin[0]).collect();
-        #[expect(clippy::cast_precision_loss, reason = "a small test width")]
-        let expected_east = vec![east_edge as f32];
-        assert_eq!(east_xs, expected_east);
-
-        // Check a fractional entity halfway across the west boundary (`x = 9.5`
-        // overlapping `min_x = 10`): it must still be drawn.
-        let crossing_west = |tick| Snapshot {
-            tick: Tick::new(tick),
-            terrain: terrain.clone(),
-            entities: vec![EntityView {
-                id: EntityId(0),
-                motion: Motion {
-                    from: TilePos::new(9, 4),
-                    to: TilePos::new(10, 4),
-                    start: Tick::ZERO,
-                    end: Tick::new(2),
-                },
-            }],
-        };
-        let (prev_w, curr_w) = (crossing_west(1), crossing_west(1));
-        let halfway = Interpolation {
-            previous: &prev_w,
-            current: &curr_w,
-            progress: 0.0,
-        };
-        // Camera at (13.0, 4.5), viewport 60×40 at 10 px/tile -> visible x in 10..=15.
-        scene.build(
-            &camera(&terrain, 13.0, 4.5),
-            Viewport::new(60.0, 40.0),
-            &halfway,
-            &assets,
-            true,
-        );
-        assert_eq!(scene.instances.len(), 1);
-        assert_eq!(scene.instances[0].origin, [9.5, 4.0]);
-
-        let empty = Snapshot {
-            tick: Tick::new(1),
-            terrain: terrain.clone(),
-            entities: Vec::new(),
-        };
-        scene.build(
-            &camera(&terrain, 0.0, 4.5),
-            Viewport::new(680.0, 40.0),
-            &still(&empty),
-            &assets,
-            true,
-        );
-        assert_eq!(scene.instances, []);
-        assert_eq!(scene.batches, []);
+        let cases = [
+            // A range wider than the world, around the seam.
+            (31.25, range(-34, 33), vec![-32.75, -0.75, 31.25]),
+            // The repeat at -1.0 only touches column 0.
+            (31.0, range(0, 35), vec![31.0]),
+            // Half inside the west edge, then touching it.
+            (9.5, range(10, 15), vec![9.5]),
+            (9.0, range(10, 15), vec![]),
+            // Half inside the east edge, then touching it.
+            (15.5, range(10, 15), vec![15.5]),
+            (16.0, range(10, 15), vec![]),
+        ];
+        for (x, range, expected) in cases {
+            // `take` turns a mistake that never ends the sequence into a failure.
+            let columns: Vec<f32> = repeats(x, 32.0, range).take(4).collect();
+            assert_eq!(columns, expected, "x = {x}, {range:?}");
+        }
     }
 }
