@@ -17,3 +17,5 @@ pub use winit::event::MouseButton;
 /// Physical key codes, re-exported so callers can write bindings without
 /// depending on `winit`.
 pub use winit::keyboard::KeyCode;
+/// Modifier keys, re-exported for the same reason as [`KeyCode`].
+pub use winit::keyboard::ModifiersState;

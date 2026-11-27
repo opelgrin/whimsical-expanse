@@ -541,6 +541,7 @@ fn toggle_fullscreen(window: &Window) {
 fn input_event(window: &Window, event: &WindowEvent) -> Option<InputEvent> {
     let input_event = match event {
         WindowEvent::Focused(false) => InputEvent::FocusLost,
+        WindowEvent::ModifiersChanged(modifiers) => InputEvent::ModifiersChanged(modifiers.state()),
         WindowEvent::CursorLeft { .. } => InputEvent::CursorLeft,
         WindowEvent::CursorMoved { position, .. } => {
             let logical = position.to_logical::<f64>(window.scale_factor());

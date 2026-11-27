@@ -2,6 +2,7 @@
 //! frames.
 
 use expanse_render::ScreenPoint;
+use winit::keyboard::ModifiersState;
 
 use super::bindings::{Bindings, Button, InputAction};
 
@@ -43,6 +44,9 @@ pub enum InputEvent {
     CursorLeft,
     /// The mouse wheel or trackpad scrolled.
     Scrolled(ScrollAmount),
+    /// The set of held modifier keys (Shift, Ctrl, Alt, Cmd or Super)
+    /// changed.
+    ModifiersChanged(ModifiersState),
     /// The window lost the keyboard focus.
     FocusLost,
 }
@@ -55,7 +59,11 @@ pub enum InputEvent {
 #[derive(Debug, Clone)]
 pub struct InputState {
     config: InputConfig,
-    held: Vec<Button>,
+    /// Each held button, with the modifiers held when it went down: a binding
+    /// is matched once, at the press, so releasing a modifier does not end a
+    /// held action and pressing one does not start it.
+    held: Vec<(Button, ModifiersState)>,
+    modifiers: ModifiersState,
     pressed: Vec<InputAction>,
     cursor: Option<ScreenPoint>,
     cursor_motion: CursorMotion,
@@ -69,6 +77,7 @@ impl InputState {
         Self {
             config,
             held: Vec::new(),
+            modifiers: ModifiersState::empty(),
             pressed: Vec::new(),
             cursor: None,
             cursor_motion: CursorMotion { dx: 0.0, dy: 0.0 },
@@ -81,7 +90,8 @@ impl InputState {
     /// The UI sees each event first. A press or scroll it consumed, such as a
     /// click on a panel, must not also pan or zoom. Releases and cursor changes
     /// always arrive: a button pressed over the world and released over a
-    /// panel would otherwise stay held, and a drag would jump.
+    /// panel would otherwise stay held, and a drag would jump. Modifier changes
+    /// always arrive too, so a modifier released over a panel is not left held.
     pub fn handle(&mut self, event: InputEvent, consumed_by_ui: bool) {
         match event {
             InputEvent::Button { pressed: true, .. } | InputEvent::Scrolled(_)
@@ -90,22 +100,29 @@ impl InputState {
             InputEvent::CursorMoved(position) => self.cursor_moved(position),
             InputEvent::CursorLeft => self.cursor_left(),
             InputEvent::Scrolled(amount) => self.scrolled(amount),
+            InputEvent::ModifiersChanged(modifiers) => self.modifiers_changed(modifiers),
             InputEvent::FocusLost => self.focus_lost(),
         }
     }
 
     /// Records a press or release of `button`. A press of a button already
     /// held, such as a key repeated by the operating system, is not a new
-    /// press.
+    /// press. A press triggers the actions bound to `button` with exactly the
+    /// modifiers held at that moment.
     pub fn button_changed(&mut self, button: Button, pressed: bool) {
-        let was_held = self.held.contains(&button);
+        let was_held = self.held.iter().any(|&(held, _)| held == button);
         if pressed && !was_held {
-            self.held.push(button);
+            self.held.push((button, self.modifiers));
             self.pressed
-                .extend(self.config.bindings.actions_for(button));
+                .extend(self.config.bindings.actions_for(button, self.modifiers));
         } else if !pressed && was_held {
-            self.held.retain(|&held| held != button);
+            self.held.retain(|&(held, _)| held != button);
         }
+    }
+
+    /// Records the modifier keys now held.
+    pub const fn modifiers_changed(&mut self, modifiers: ModifiersState) {
+        self.modifiers = modifiers;
     }
 
     /// Records the cursor at `position`, in logical pixels.
@@ -142,6 +159,7 @@ impl InputState {
     /// window gets no release events while it is out of focus.
     pub fn focus_lost(&mut self) {
         self.held.clear();
+        self.modifiers = ModifiersState::empty();
         self.cursor_motion = CursorMotion::default();
     }
 
@@ -150,7 +168,7 @@ impl InputState {
     pub fn is_held(&self, action: InputAction) -> bool {
         self.held
             .iter()
-            .any(|&button| self.config.bindings.is_bound(button, action))
+            .any(|&(button, modifiers)| self.config.bindings.is_bound(button, modifiers, action))
     }
 
     /// The actions pressed since the last frame, in order. An action pressed
@@ -199,6 +217,8 @@ mod tests {
     const UP: Button = Button::Key(KeyCode::ArrowUp);
     const ESCAPE: Button = Button::Key(KeyCode::Escape);
     const MIDDLE: Button = Button::Mouse(MouseButton::Middle);
+    const F: Button = Button::Key(KeyCode::KeyF);
+    const CTRL_CMD: ModifiersState = ModifiersState::CONTROL.union(ModifiersState::SUPER);
 
     fn input() -> InputState {
         InputState::new(InputConfig {
@@ -206,7 +226,9 @@ mod tests {
                 .with(W, InputAction::PanUp)
                 .with(UP, InputAction::PanUp)
                 .with(ESCAPE, InputAction::TogglePause)
-                .with(MIDDLE, InputAction::DragPan),
+                .with(MIDDLE, InputAction::DragPan)
+                .with(F, InputAction::ToggleOverlay)
+                .with_modifiers(F, CTRL_CMD, InputAction::ToggleFullscreen),
             pixels_per_scroll_line: 40.0,
         })
     }
@@ -318,5 +340,48 @@ mod tests {
         input.cursor_moved(ScreenPoint::new(500.0, 400.0));
         assert_eq!(input.cursor_motion(), CursorMotion::default());
         assert_eq!(input.cursor(), Some(ScreenPoint::new(500.0, 400.0)));
+    }
+
+    /// Catches modifiers matched loosely: a shortcut also triggering what its
+    /// bare key does, a bare key firing during a system shortcut (Cmd+W
+    /// panning), or part of a chord (Ctrl+F) triggering the whole chord.
+    #[test]
+    fn a_press_triggers_only_bindings_with_exactly_the_held_modifiers() {
+        let mut input = input();
+
+        input.modifiers_changed(CTRL_CMD);
+        input.button_changed(F, true);
+        input.button_changed(F, false);
+        input.modifiers_changed(ModifiersState::CONTROL);
+        input.button_changed(F, true);
+        input.button_changed(F, false);
+        input.modifiers_changed(ModifiersState::empty());
+        input.button_changed(F, true);
+        assert_eq!(
+            input.pressed_actions(),
+            [InputAction::ToggleFullscreen, InputAction::ToggleOverlay]
+        );
+
+        input.modifiers_changed(ModifiersState::SUPER);
+        input.button_changed(W, true);
+        assert!(!input.is_held(InputAction::PanUp));
+    }
+
+    /// Catches modifiers read at every frame instead of at the press, which
+    /// would stop a pan when Shift is released mid-pan, and a modifier still
+    /// counted as held after the window lost focus (Cmd+Tab away and back),
+    /// which would leave every bare key dead.
+    #[test]
+    fn modifiers_count_at_the_press_and_are_released_on_focus_loss() {
+        let mut input = input();
+        input.button_changed(W, true);
+        input.modifiers_changed(ModifiersState::SHIFT);
+        assert!(input.is_held(InputAction::PanUp));
+        input.button_changed(W, false);
+
+        input.handle(InputEvent::ModifiersChanged(ModifiersState::SUPER), false);
+        input.focus_lost();
+        input.button_changed(W, true);
+        assert!(input.is_held(InputAction::PanUp));
     }
 }
