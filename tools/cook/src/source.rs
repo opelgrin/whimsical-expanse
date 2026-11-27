@@ -5,17 +5,9 @@
 use std::error::Error;
 use std::fmt;
 
+use expanse_assets::blob::{BLOCK_COLUMNS, BLOCK_ROWS};
+use expanse_assets::{BLOCK_SIZE, Image, SEASONS, TILE_SIZE};
 use expanse_core::asset::{GroundId, SpriteId};
-
-use crate::blob::{BLOCK_COLUMNS, BLOCK_ROWS};
-use crate::image::Image;
-
-/// The side of a tile, in pixels.
-pub const TILE_SIZE: u32 = 16;
-
-/// The number of seasonal variants of an asset that has them, in calendar
-/// order from spring.
-pub const SEASONS: usize = 4;
 
 /// The art of one ground.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,9 +49,6 @@ pub struct Sources {
     pub pairs: Vec<SourceGroundPair>,
     pub sprites: Vec<SourceSprite>,
 }
-
-/// The size of a blob block, in pixels.
-pub const BLOCK_SIZE: [u32; 2] = [BLOCK_COLUMNS * TILE_SIZE, BLOCK_ROWS * TILE_SIZE];
 
 impl Sources {
     /// Checks what `cook` relies on.

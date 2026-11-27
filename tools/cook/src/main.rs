@@ -10,8 +10,9 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use expanse_assets::{Container, write_container};
+use expanse_cook::cook;
 use expanse_cook::placeholder::draw_placeholders;
-use expanse_cook::{Container, cook, write_container};
 
 fn main() -> ExitCode {
     let out = match parse_out(std::env::args().skip(1)) {

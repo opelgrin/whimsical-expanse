@@ -594,7 +594,7 @@ fn write_mip_level(
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
     mip_level: u32,
-    image: &expanse_cook::Image,
+    image: &expanse_assets::Image,
 ) {
     let bytes: Vec<u8> = image.pixels().iter().flatten().copied().collect();
     queue.write_texture(

@@ -6,7 +6,7 @@
 //! the obstacle kinds. Patterns are decoration; water and peaks use patterns
 //! that no passable ground uses.
 
-use expanse_cook::SEASONS;
+use expanse_assets::SEASONS;
 use expanse_cook::placeholder::{
     Colours, GroundRecipe, Pattern, Recipes, Rgb, Shape, SpriteRecipe,
 };

@@ -8,7 +8,7 @@
 //! neighbours beyond the north or south edge count as present.
 
 use bytemuck::{Pod, Zeroable};
-use expanse_cook::blob::{Neighbour, NeighbourMask, Slot, slot};
+use expanse_assets::blob::{Neighbour, NeighbourMask, Slot, slot};
 use expanse_core::grid::TilePos;
 use expanse_terrain::{CHUNK_SIZE, ChunkPos, Terrain};
 
@@ -181,8 +181,8 @@ pub(crate) fn build_chunk_mesh(terrain: &Terrain, assets: &Assets, chunk: ChunkP
 
 #[cfg(test)]
 mod tests {
-    use expanse_cook::{
-        BLOCK_SIZE, Image, SourceGround, SourceGroundPair, SourceSprite, Sources, cook,
+    use expanse_assets::{
+        Container, GroundEntry, GroundIndex, GroundPairEntry, PADDING, Region, SpriteEntry,
     };
     use expanse_core::asset::{GroundId, SpriteId};
     use expanse_terrain::{BiomeDefinition, BiomeIndex, BiomeTable, FieldRanges, Fields, Tile};
@@ -199,37 +199,39 @@ mod tests {
         SpriteId::new(name).expect("valid sprite name")
     }
 
-    fn empty_block() -> Vec<Vec<Image>> {
-        vec![vec![Image::new(BLOCK_SIZE[0], BLOCK_SIZE[1])]]
-    }
-
     /// Four grounds in drawing order: `deep < shallow < sand < grass`, with an
     /// optional list of pair overrides.
     fn assets_with_pairs(pairs: &[(&str, &str)]) -> Assets {
         let names = ["deep", "shallow", "sand", "grass"];
-        let sources = Sources {
-            grounds: names
-                .iter()
-                .map(|name| SourceGround {
-                    id: ground_id(name),
-                    variants: empty_block(),
-                })
-                .collect(),
-            pairs: pairs
-                .iter()
-                .map(|&(higher, lower)| SourceGroundPair {
-                    higher: ground_id(higher),
-                    lower: ground_id(lower),
-                    variants: empty_block(),
-                })
-                .collect(),
-            sprites: vec![SourceSprite {
-                id: sprite_id("walker"),
-                anchor: [0, 0],
-                variants: vec![vec![Image::new(16, 16)]],
-            }],
+        let region = Region {
+            atlas: 0,
+            x: PADDING,
+            y: PADDING,
         };
-        let container = cook(&sources).expect("valid sources");
+        let grounds: Vec<GroundEntry> = names
+            .iter()
+            .map(|name| GroundEntry::new(ground_id(name), vec![vec![region]]))
+            .collect();
+        let index_of = |name: &str| {
+            let position = names
+                .iter()
+                .position(|&candidate| candidate == name)
+                .expect("known test ground");
+            GroundIndex(u16::try_from(position).expect("small"))
+        };
+        let ground_pairs: Vec<GroundPairEntry> = pairs
+            .iter()
+            .map(|&(higher, lower)| {
+                GroundPairEntry::new(index_of(higher), index_of(lower), vec![vec![region]])
+            })
+            .collect();
+        let sprites = vec![SpriteEntry::new(
+            sprite_id("walker"),
+            [16, 16],
+            [0, 0],
+            vec![vec![region]],
+        )];
+        let container = Container::new(Vec::new(), grounds, ground_pairs, sprites);
         let biomes: Vec<BiomeDefinition> = names
             .iter()
             .enumerate()

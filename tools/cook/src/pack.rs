@@ -3,9 +3,7 @@
 use std::error::Error;
 use std::fmt;
 
-/// The width of an atlas page, and the most any page may be tall. Every GPU
-/// that `wgpu` supports takes textures of this size.
-pub const MAX_ATLAS_SIZE: u32 = 2048;
+use expanse_assets::MAX_ATLAS_SIZE;
 
 /// Where a rectangle was placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

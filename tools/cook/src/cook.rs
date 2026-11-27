@@ -4,13 +4,15 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::blob::{BLOCK_COLUMNS, BLOCK_ROWS, slots};
-use crate::container::{
-    Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, PADDING, Region, SpriteEntry,
+use expanse_assets::blob::{BLOCK_COLUMNS, BLOCK_ROWS, slots};
+use expanse_assets::{
+    Atlas, CELL, Container, GroundEntry, GroundIndex, GroundPairEntry, Image, MAX_ATLAS_SIZE,
+    PADDING, Region, SpriteEntry, TILE_SIZE,
 };
-use crate::image::Image;
-use crate::pack::{MAX_ATLAS_SIZE, Placement, pack};
-use crate::source::{InvalidSource, Sources, TILE_SIZE};
+
+use crate::mipmap::downsample;
+use crate::pack::{Placement, pack};
+use crate::source::{InvalidSource, Sources};
 
 /// Width of one padded blob block on an atlas page, in pixels.
 const PACKED_BLOCK_WIDTH: u32 = BLOCK_COLUMNS * CELL;
@@ -104,10 +106,10 @@ pub fn cook(sources: &Sources) -> Result<Container, CookError> {
         .iter()
         .map(|ground| {
             let placement = next(&mut placements);
-            GroundEntry {
-                id: ground.id.clone(),
-                variants: draw_block_group(&mut pages, &ground.variants, placement),
-            }
+            GroundEntry::new(
+                ground.id.clone(),
+                draw_block_group(&mut pages, &ground.variants, placement),
+            )
         })
         .collect();
     let ground_index = |id: &expanse_core::asset::GroundId| {
@@ -122,11 +124,11 @@ pub fn cook(sources: &Sources) -> Result<Container, CookError> {
         .iter()
         .map(|pair| {
             let placement = next(&mut placements);
-            GroundPairEntry {
-                higher: ground_index(&pair.higher),
-                lower: ground_index(&pair.lower),
-                variants: draw_block_group(&mut pages, &pair.variants, placement),
-            }
+            GroundPairEntry::new(
+                ground_index(&pair.higher),
+                ground_index(&pair.lower),
+                draw_block_group(&mut pages, &pair.variants, placement),
+            )
         })
         .collect();
     let sprites: Vec<SpriteEntry> = sources
@@ -144,15 +146,21 @@ pub fn cook(sources: &Sources) -> Result<Container, CookError> {
                         .collect()
                 })
                 .collect();
-            SpriteEntry {
-                id: sprite.id.clone(),
-                size: [first.width(), first.height()],
-                anchor: sprite.anchor,
+            SpriteEntry::new(
+                sprite.id.clone(),
+                [first.width(), first.height()],
+                sprite.anchor,
                 variants,
-            }
+            )
         })
         .collect();
-    let atlases = pages.into_iter().map(Atlas::from_image).collect();
+    let atlases = pages
+        .into_iter()
+        .map(|page| {
+            let mipmap = downsample(&page);
+            Atlas::new(page, mipmap)
+        })
+        .collect();
     Ok(Container::new(atlases, grounds, ground_pairs, sprites))
 }
 
@@ -265,12 +273,13 @@ impl Error for CookError {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
+    use expanse_assets::{BLOCK_SIZE, SEASONS};
     use expanse_core::asset::{GroundId, SpriteId};
     use expanse_core::rng::Rng;
 
     use super::*;
-    use crate::source::{BLOCK_SIZE, SEASONS, SourceGround, SourceGroundPair, SourceSprite};
+    use crate::source::{SourceGround, SourceGroundPair, SourceSprite};
 
     /// An image of random pixels, so that a misplaced copy shows.
     pub(crate) fn noise(rng: &mut Rng, width: u32, height: u32) -> Image {

@@ -7,11 +7,11 @@
 use std::error::Error;
 use std::fmt;
 
+use expanse_assets::blob::{Neighbour, NeighbourMask, mask_of_slot, slots};
+use expanse_assets::{BLOCK_SIZE, Image, Rgba, SEASONS, TILE_SIZE};
 use expanse_core::asset::{GroundId, SpriteId};
 
-use crate::blob::{Neighbour, NeighbourMask, mask_of_slot, slots};
-use crate::image::{Image, Rgba};
-use crate::source::{BLOCK_SIZE, SEASONS, SourceGround, SourceSprite, Sources, TILE_SIZE};
+use crate::source::{SourceGround, SourceSprite, Sources};
 
 /// A colour in sRGB.
 pub type Rgb = [u8; 3];
@@ -431,8 +431,9 @@ impl Error for InvalidRecipe {}
 
 #[cfg(test)]
 mod tests {
+    use expanse_assets::blob::Slot;
+
     use super::*;
-    use crate::blob::Slot;
 
     /// The mask that the pack's convention reads from a tile's transparency
     /// (see `dev/findings/asset-pack.md#tiles`): a side is present when the
