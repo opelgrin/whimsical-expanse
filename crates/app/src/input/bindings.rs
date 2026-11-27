@@ -1,7 +1,7 @@
 //! The mapping from physical buttons to input actions.
 
 use winit::event::MouseButton;
-use winit::keyboard::KeyCode;
+use winit::keyboard::{KeyCode, ModifiersState};
 
 /// What the player means by pressing a button, independent of which button it
 /// is.
@@ -38,6 +38,18 @@ pub enum Button {
     Mouse(MouseButton),
 }
 
+/// A button together with the modifier keys that must be held when it goes
+/// down, such as Ctrl+Cmd+F.
+///
+/// The modifiers must match exactly, so a shortcut with modifiers never also
+/// triggers what the bare button does, and a bare binding such as `W` does not
+/// fire while Cmd is held for a system shortcut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Chord {
+    button: Button,
+    modifiers: ModifiersState,
+}
+
 /// Which buttons trigger which input actions.
 ///
 /// An action may have any number of buttons, and a button may trigger several
@@ -45,7 +57,7 @@ pub enum Button {
 /// defaults.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Bindings {
-    pairs: Vec<(Button, InputAction)>,
+    pairs: Vec<(Chord, InputAction)>,
 }
 
 impl Bindings {
@@ -55,26 +67,54 @@ impl Bindings {
         Self { pairs: Vec::new() }
     }
 
-    /// Returns these bindings with `button` also triggering `action`. Binding
-    /// the same pair twice has no further effect.
+    /// Returns these bindings with `button`, pressed with no modifier key
+    /// held, also triggering `action`. Binding the same pair twice has no
+    /// further effect.
     #[must_use]
-    pub fn with(mut self, button: Button, action: InputAction) -> Self {
-        if !self.pairs.contains(&(button, action)) {
-            self.pairs.push((button, action));
+    pub fn with(self, button: Button, action: InputAction) -> Self {
+        self.with_modifiers(button, ModifiersState::empty(), action)
+    }
+
+    /// Returns these bindings with `button`, pressed while exactly
+    /// `modifiers` are held, also triggering `action`. On macOS,
+    /// [`ModifiersState::SUPER`] is Cmd; elsewhere it is the Windows or Super
+    /// key. Binding the same chord and action twice has no further effect.
+    #[must_use]
+    pub fn with_modifiers(
+        mut self,
+        button: Button,
+        modifiers: ModifiersState,
+        action: InputAction,
+    ) -> Self {
+        let pair = (Chord { button, modifiers }, action);
+        if !self.pairs.contains(&pair) {
+            self.pairs.push(pair);
         }
         self
     }
 
-    /// Whether `button` triggers `action`.
-    pub(super) fn is_bound(&self, button: Button, action: InputAction) -> bool {
-        self.pairs.contains(&(button, action))
+    /// Whether `button`, pressed while `modifiers` were held, triggers
+    /// `action`.
+    pub(super) fn is_bound(
+        &self,
+        button: Button,
+        modifiers: ModifiersState,
+        action: InputAction,
+    ) -> bool {
+        self.pairs.contains(&(Chord { button, modifiers }, action))
     }
 
-    /// The actions `button` triggers, in the order they were bound.
-    pub(super) fn actions_for(&self, button: Button) -> impl Iterator<Item = InputAction> + '_ {
+    /// The actions `button`, pressed while `modifiers` are held, triggers, in
+    /// the order they were bound.
+    pub(super) fn actions_for(
+        &self,
+        button: Button,
+        modifiers: ModifiersState,
+    ) -> impl Iterator<Item = InputAction> + '_ {
+        let chord = Chord { button, modifiers };
         self.pairs
             .iter()
-            .filter(move |(bound, _)| *bound == button)
+            .filter(move |(bound, _)| *bound == chord)
             .map(|&(_, action)| action)
     }
 }

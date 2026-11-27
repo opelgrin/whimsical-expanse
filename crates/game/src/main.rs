@@ -14,7 +14,9 @@ use std::time::Duration;
 use expanse_app::assets::load_assets;
 use expanse_app::camera_controls::CameraControlsConfig;
 use expanse_app::genesis::Genesis;
-use expanse_app::input::{Bindings, Button, InputAction, InputConfig, KeyCode, MouseButton};
+use expanse_app::input::{
+    Bindings, Button, InputAction, InputConfig, KeyCode, ModifiersState, MouseButton,
+};
 use expanse_app::pacer::{Speed, TickPacer};
 use expanse_app::window::{self, AppConfig};
 use expanse_render::{AssetContent, CameraConfig};
@@ -120,6 +122,9 @@ fn configure_thread_pool() {
 }
 
 /// Physical key positions, so `WASD` is `ZQSD` on AZERTY, plus the arrow keys.
+///
+/// Fullscreen has each platform's usual shortcut, bound everywhere: F11 on
+/// Linux and Windows, Ctrl+Cmd+F on macOS, which keeps F11 for itself.
 fn default_bindings() -> Bindings {
     Bindings::new()
         .with(Button::Key(KeyCode::KeyW), InputAction::PanUp)
@@ -134,6 +139,11 @@ fn default_bindings() -> Bindings {
         .with(Button::Key(KeyCode::Escape), InputAction::TogglePause)
         .with(Button::Key(KeyCode::F3), InputAction::ToggleOverlay)
         .with(Button::Key(KeyCode::F11), InputAction::ToggleFullscreen)
+        .with_modifiers(
+            Button::Key(KeyCode::KeyF),
+            ModifiersState::CONTROL | ModifiersState::SUPER,
+            InputAction::ToggleFullscreen,
+        )
 }
 
 /// What the command line chose.

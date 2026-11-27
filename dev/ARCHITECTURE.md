@@ -117,7 +117,10 @@ owes instead of catching up indefinitely.
 The window is the only code that sees platform events. It translates each one
 for a single input state ([`crates/app/src/input/`](../crates/app/src/input/)),
 which uses bindings to turn keys and mouse buttons into **input actions**.
-Bindings are data, supplied by the game binary like other defaults.
+Bindings are data, supplied by the game binary like other defaults. A binding
+may require modifier keys, such as Ctrl+Cmd+F. They must match exactly and are
+checked once, when the button goes down. A shortcut then never also triggers
+what its bare key does, and releasing a modifier never ends a held action.
 
 Once per frame, consumers such as the camera controls read that state: what is
 held, what was pressed, the cursor, its motion and scrolling. The end of the
