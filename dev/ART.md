@@ -121,7 +121,7 @@ or Windows).
 4. **Verify before finishing:**
    - Check every 47-tile blob sheet automatically against the transparency-mask
      rule and slot order in [findings/asset-pack.md](findings/asset-pack.md),
-     including its exception for frame 0 of the grass-over-water sheets.
+     except for the kinds of block it lists as misread by that rule.
    - Inspect **4× nearest-neighbour** previews of both the sprite sheets (over a
      dark checkerboard to spot stray pixels) and a multi-tile mockup containing
      a pack character and an adjacent pack biome tile.
