@@ -132,64 +132,6 @@ impl fmt::Display for InvalidCameraConfig {
 
 impl Error for InvalidCameraConfig {}
 
-/// A crisp physical scale relative to one art pixel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum PixelScale {
-    /// Half-size (`0.5×`), matching the atlas's single mipmap level.
-    Half,
-    /// Exact integer multiple (`n × n` physical pixels per art pixel, `n >= 1`).
-    Integer(u32),
-}
-
-impl PixelScale {
-    const fn index(self) -> i64 {
-        match self {
-            Self::Half => 0,
-            Self::Integer(n) => n as i64,
-        }
-    }
-
-    fn from_index(index: i64) -> Self {
-        if index <= 0 {
-            Self::Half
-        } else {
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "index is positive and capped at u16::MAX before casting"
-            )]
-            Self::Integer(index.min(i64::from(u16::MAX)) as u32)
-        }
-    }
-
-    fn step(self, steps: i32, min: Self, max: Self) -> Self {
-        let target = self
-            .index()
-            .saturating_add(i64::from(steps))
-            .clamp(min.index(), max.index());
-        Self::from_index(target)
-    }
-
-    fn physical_pixels_per_tile(self, art_pixels_per_tile: u32) -> f32 {
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "tile art pixel counts are small integers, exact in f32"
-        )]
-        let art = art_pixels_per_tile as f32;
-        match self {
-            Self::Half => art * 0.5,
-            Self::Integer(n) => {
-                #[expect(
-                    clippy::cast_precision_loss,
-                    reason = "integer pixel scales are capped at u16::MAX, exact in f32"
-                )]
-                let factor = n as f32;
-                art * factor
-            }
-        }
-    }
-}
-
 /// Projection parameters uploaded to the GPU for transforming world-tile
 /// coordinates into normalized device coordinates `[-1, 1]`.
 #[repr(C)]
@@ -206,9 +148,13 @@ pub struct CameraUniform {
 pub struct Camera {
     /// Canonical: `x` lies in `0..width` and `y` in `0..=height`.
     centre: WorldPoint,
-    pixel_scale: PixelScale,
+    /// `0` draws each art pixel at half a physical pixel, matching the
+    /// atlas's single mipmap level; `n >= 1` draws it at `n × n` physical
+    /// pixels.
+    zoom_level: u32,
+    /// Physical pixels per logical pixel, at least `1.0`.
     scale_factor: f32,
-    art_pixels_per_tile: u32,
+    art_pixels_per_tile: f32,
     min_pixels_per_tile: f32,
     max_pixels_per_tile: f32,
     grid: Grid,
@@ -245,31 +191,21 @@ impl Camera {
             return Err(InvalidCameraConfig::NonFiniteCentre);
         }
 
-        let scale_factor = 1.0;
-        let (min_scale, max_scale) = scale_bounds(
-            config.min_pixels_per_tile,
-            config.max_pixels_per_tile,
-            config.art_pixels_per_tile,
-            scale_factor,
-        );
-        let initial_clamped = config
-            .initial_pixels_per_tile
-            .clamp(config.min_pixels_per_tile, config.max_pixels_per_tile);
-        let pixel_scale = snap_scale(
-            initial_clamped * scale_factor,
-            config.art_pixels_per_tile,
-            min_scale,
-            max_scale,
-        );
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "tile art pixel counts are small integers, exact in f32"
+        )]
+        let art_pixels_per_tile = config.art_pixels_per_tile as f32;
         let mut camera = Self {
             centre,
-            pixel_scale,
-            scale_factor,
-            art_pixels_per_tile: config.art_pixels_per_tile,
+            zoom_level: 0,
+            scale_factor: 1.0,
+            art_pixels_per_tile,
             min_pixels_per_tile: config.min_pixels_per_tile,
             max_pixels_per_tile: config.max_pixels_per_tile,
             grid,
         };
+        camera.snap_zoom(config.initial_pixels_per_tile);
         camera.wrap_centre();
         Ok(camera)
     }
@@ -299,27 +235,21 @@ impl Camera {
         if (effective - self.scale_factor).abs() < 1e-6 {
             return;
         }
-        let target_physical = self.pixels_per_tile() * effective;
+        let pixels_per_tile = self.pixels_per_tile();
         self.scale_factor = effective;
-        let (min_scale, max_scale) = scale_bounds(
-            self.min_pixels_per_tile,
-            self.max_pixels_per_tile,
-            self.art_pixels_per_tile,
-            effective,
-        );
-        self.pixel_scale = snap_scale(
-            target_physical,
-            self.art_pixels_per_tile,
-            min_scale,
-            max_scale,
-        );
+        self.snap_zoom(pixels_per_tile);
     }
 
     /// Current scale in physical pixels per tile.
     #[must_use]
     pub fn physical_pixels_per_tile(&self) -> f32 {
-        self.pixel_scale
-            .physical_pixels_per_tile(self.art_pixels_per_tile)
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "zoom levels are small integers, exact in f32"
+        )]
+        let level = self.zoom_level as f32;
+        let art_pixel = if self.zoom_level == 0 { 0.5 } else { level };
+        art_pixel * self.art_pixels_per_tile
     }
 
     /// Current scale in logical pixels per tile.
@@ -392,18 +322,13 @@ impl Camera {
         if steps == 0 || !viewport.is_non_empty() {
             return;
         }
-        let (min_scale, max_scale) = scale_bounds(
-            self.min_pixels_per_tile,
-            self.max_pixels_per_tile,
-            self.art_pixels_per_tile,
-            self.scale_factor,
-        );
-        let next = self.pixel_scale.step(steps, min_scale, max_scale);
-        if next == self.pixel_scale {
+        let (min, max) = self.zoom_level_bounds();
+        let next = self.zoom_level.saturating_add_signed(steps).clamp(min, max);
+        if next == self.zoom_level {
             return;
         }
         let anchor_world = self.screen_to_world(anchor, viewport);
-        self.pixel_scale = next;
+        self.zoom_level = next;
 
         let pixels_per_tile = self.pixels_per_tile();
         let viewport_centre = viewport.centre();
@@ -449,26 +374,22 @@ impl Camera {
     /// Builds the clip-space projection uniform for `viewport`.
     ///
     /// Snaps the camera translation so world tile edges land on exact physical
-    /// pixel boundaries (`scale_factor` physical pixels per logical pixel, or 1
-    /// if it is smaller), accounting for the half-pixel centre offset of odd
-    /// physical viewport dimensions so adjacent axis-aligned tiles share exact
-    /// pixel edges without sub-pixel jitter or half-pixel blur.
+    /// pixel boundaries, at the scale factor last given to
+    /// [`Camera::set_scale_factor`], accounting for the half-pixel centre
+    /// offset of odd physical viewport dimensions so adjacent axis-aligned
+    /// tiles share exact pixel edges without sub-pixel jitter or half-pixel
+    /// blur.
     #[must_use]
-    pub fn uniform(&self, viewport: Viewport, scale_factor: f32) -> CameraUniform {
+    pub fn uniform(&self, viewport: Viewport) -> CameraUniform {
         if !viewport.is_non_empty() {
             return CameraUniform {
                 scale: [0.0, 0.0],
                 centre: [self.centre.x, self.centre.y],
             };
         }
-        let effective_scale = scale_factor.max(1.0);
-        let physical_px_per_tile = if (effective_scale - self.scale_factor).abs() < 1e-6 {
-            self.physical_pixels_per_tile()
-        } else {
-            self.pixels_per_tile() * effective_scale
-        };
-        let physical_width = viewport.width * effective_scale;
-        let physical_height = viewport.height * effective_scale;
+        let physical_px_per_tile = self.physical_pixels_per_tile();
+        let physical_width = viewport.width * self.scale_factor;
+        let physical_height = viewport.height * self.scale_factor;
         let centre = [
             snap_centre_axis(self.centre.x, physical_px_per_tile, physical_width),
             snap_centre_axis(self.centre.y, physical_px_per_tile, physical_height),
@@ -495,6 +416,47 @@ impl Camera {
         self.centre.x = if x < width { x } else { 0.0 };
         self.centre.y = self.centre.y.clamp(0.0, height);
     }
+
+    /// Sets the zoom level nearest to `pixels_per_tile` logical pixels per
+    /// tile, within the limits.
+    fn snap_zoom(&mut self, pixels_per_tile: f32) {
+        let ratio = self.art_pixel_ratio(pixels_per_tile);
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "ratio is at least 0.75 here, and the cast saturates"
+        )]
+        let nearest = if ratio < 0.75 {
+            0
+        } else {
+            ratio.round() as u32
+        };
+        let (min, max) = self.zoom_level_bounds();
+        self.zoom_level = nearest.clamp(min, max);
+    }
+
+    /// Inclusive zoom level limits for the logical zoom limits at the current
+    /// scale factor. Below `1×` the only level is `0` (`0.5×`). When no level
+    /// lies between the limits, the one below the maximum is used.
+    fn zoom_level_bounds(&self) -> (u32, u32) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "ratio is at least 1.0 here, and the cast saturates"
+        )]
+        let level = |ratio: f32, round: fn(f32) -> f32| {
+            if ratio < 1.0 { 0 } else { round(ratio) as u32 }
+        };
+        let max = level(self.art_pixel_ratio(self.max_pixels_per_tile), f32::floor);
+        let min = level(self.art_pixel_ratio(self.min_pixels_per_tile), f32::ceil);
+        (min.min(max), max)
+    }
+
+    /// Physical pixels per art pixel at `pixels_per_tile` logical pixels per
+    /// tile.
+    fn art_pixel_ratio(&self, pixels_per_tile: f32) -> f32 {
+        pixels_per_tile * self.scale_factor / self.art_pixels_per_tile
+    }
 }
 
 /// Snaps `centre` along one axis so integer world coordinates map to integer
@@ -506,87 +468,6 @@ impl Camera {
 fn snap_centre_axis(centre: f32, physical_px_per_tile: f32, physical_extent: f32) -> f32 {
     let half_pixel = (physical_extent.round() * 0.5).fract();
     ((centre * physical_px_per_tile - half_pixel).round() + half_pixel) / physical_px_per_tile
-}
-
-/// Inclusive crisp physical scale bounds for the configured logical zoom
-/// limits at `effective_scale`.
-fn scale_bounds(
-    min_logical: f32,
-    max_logical: f32,
-    art_pixels: u32,
-    effective_scale: f32,
-) -> (PixelScale, PixelScale) {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "tile art pixel counts are small integers, exact in f32"
-    )]
-    let art = art_pixels as f32;
-    let min_phys = min_logical * effective_scale;
-    let max_phys = max_logical * effective_scale;
-
-    let min_scale = if min_phys < art {
-        PixelScale::Half
-    } else {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "min_phys >= art > 0 and clamped to 1..=u16::MAX"
-        )]
-        let n = (min_phys / art).ceil().clamp(1.0, f32::from(u16::MAX)) as u32;
-        PixelScale::Integer(n)
-    };
-
-    let max_scale = if max_phys < art {
-        PixelScale::Half
-    } else {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "max_phys >= art > 0 and clamped to 1..=u16::MAX"
-        )]
-        let n = (max_phys / art).floor().clamp(1.0, f32::from(u16::MAX)) as u32;
-        PixelScale::Integer(n)
-    };
-
-    if min_scale <= max_scale {
-        (min_scale, max_scale)
-    } else {
-        let midpoint = f32::midpoint(min_phys, max_phys);
-        let snapped = snap_scale(
-            midpoint,
-            art_pixels,
-            PixelScale::Half,
-            PixelScale::Integer(u32::from(u16::MAX)),
-        );
-        (snapped, snapped)
-    }
-}
-
-/// Snaps `target_phys` (physical pixels per tile) to the nearest crisp
-/// [`PixelScale`] within `[min_scale, max_scale]`.
-fn snap_scale(
-    target_phys: f32,
-    art_pixels: u32,
-    min_scale: PixelScale,
-    max_scale: PixelScale,
-) -> PixelScale {
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "tile art pixel counts are small integers, exact in f32"
-    )]
-    let art = art_pixels as f32;
-    let raw = if target_phys < art * 0.75 {
-        PixelScale::Half
-    } else {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "target_phys >= 0.75 * art > 0 and clamped to 1..=u16::MAX"
-        )]
-        let n = (target_phys / art).round().clamp(1.0, f32::from(u16::MAX)) as u32;
-        PixelScale::Integer(n)
-    };
-    raw.clamp(min_scale, max_scale)
 }
 
 // ============================================================================
@@ -876,12 +757,13 @@ mod tests {
             max_pixels_per_tile: 160.0,
             art_pixels_per_tile: 10,
         };
-        let camera = camera_at(config, grid(30, 20), 10.03, 8.0);
+        let mut camera = camera_at(config, grid(30, 20), 10.03, 8.0);
+        camera.set_scale_factor(2.0);
         let viewport = Viewport::new(800.0, 400.0);
 
         // At 10 logical px/tile and HiDPI scale_factor 2.0 -> 20 physical px/tile (0.05 tile steps).
         // 10.03 * 20 = 200.6 -> rounds to 201 / 20 = 10.05.
-        let uniform = camera.uniform(viewport, 2.0);
+        let uniform = camera.uniform(viewport);
         assert_close(uniform.centre[0], 10.05);
         assert_close(uniform.centre[1], 8.0);
 
@@ -892,14 +774,8 @@ mod tests {
         assert_close(ndc_x, 1.0);
         assert_close(ndc_y, 1.0);
 
-        assert_eq!(
-            camera.uniform(Viewport::new(0.0, 400.0), 2.0).scale,
-            [0.0, 0.0]
-        );
-        assert_eq!(
-            camera.uniform(Viewport::new(800.0, 0.0), 2.0).scale,
-            [0.0, 0.0]
-        );
+        assert_eq!(camera.uniform(Viewport::new(0.0, 400.0)).scale, [0.0, 0.0]);
+        assert_eq!(camera.uniform(Viewport::new(800.0, 0.0)).scale, [0.0, 0.0]);
     }
 
     /// Catches half-pixel misalignment on odd physical viewports, where
@@ -913,22 +789,23 @@ mod tests {
             max_pixels_per_tile: 160.0,
             art_pixels_per_tile: 16,
         };
-        let camera = camera_at(config, grid(30, 20), 10.0, 8.0);
         let cases = [
             // Odd width and odd height at 1x DPI.
             (Viewport::new(801.0, 401.0), 1.0_f32),
             // Even width, odd height (catches swapped X/Y viewport extents).
             (Viewport::new(800.0, 401.0), 1.0_f32),
             // Odd physical width (801 px) and even physical height (450 px) at 1.25x DPI
-            // -> 20 physical px/tile (integer).
+            // -> 20 physical px/tile, snapped to 1x (16 physical px/tile).
             (Viewport::new(640.8, 360.0), 1.25_f32),
         ];
 
         for (viewport, scale_factor) in cases {
-            let uniform = camera.uniform(viewport, scale_factor);
+            let mut camera = camera_at(config, grid(30, 20), 10.0, 8.0);
+            camera.set_scale_factor(scale_factor);
+            let uniform = camera.uniform(viewport);
             let physical_w = (viewport.width * scale_factor).round();
             let physical_h = (viewport.height * scale_factor).round();
-            let physical_px_per_tile = config.initial_pixels_per_tile * scale_factor;
+            let physical_px_per_tile = camera.physical_pixels_per_tile();
 
             // Snapped centre must stay within half a physical pixel of the camera.
             assert!(
