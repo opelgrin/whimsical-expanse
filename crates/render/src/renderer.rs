@@ -275,15 +275,10 @@ impl<'window> Renderer<'window> {
     /// Returns [`RenderError::SurfaceValidation`] if acquiring a frame reports
     /// a validation error. Lost or outdated surfaces are reconfigured, and
     /// timeouts and occluded windows skip the frame; none of these is an error.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each frame input is a distinct borrowed view"
-    )]
     pub fn render(
         &mut self,
         camera: &Camera,
         viewport: Viewport,
-        scale_factor: f32,
         interpolation: &Interpolation<'_>,
         assets: &Assets,
         terrain: &TerrainStyle<'_>,
@@ -295,15 +290,7 @@ impl<'window> Renderer<'window> {
                     .update_texture(&self.device, &self.queue, *id, delta);
             }
         }
-        let result = self.draw(
-            camera,
-            viewport,
-            scale_factor,
-            interpolation,
-            assets,
-            terrain,
-            ui,
-        );
+        let result = self.draw(camera, viewport, interpolation, assets, terrain, ui);
         // Freed only after the frame that may still use them is submitted.
         for id in &ui.textures_delta.free {
             self.ui_painter.free_texture(id);
@@ -311,15 +298,10 @@ impl<'window> Renderer<'window> {
         result
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each frame input is a distinct borrowed view"
-    )]
     fn draw(
         &mut self,
         camera: &Camera,
         viewport: Viewport,
-        scale_factor: f32,
         interpolation: &Interpolation<'_>,
         assets: &Assets,
         terrain: &TerrainStyle<'_>,
@@ -344,7 +326,7 @@ impl<'window> Renderer<'window> {
             }
         };
 
-        let uniform = camera.uniform(viewport, scale_factor);
+        let uniform = camera.uniform(viewport);
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
 

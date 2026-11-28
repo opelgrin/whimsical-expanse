@@ -387,7 +387,6 @@ impl App {
         if let Err(err) = graphics.renderer.render(
             &self.camera,
             viewport,
-            scale_factor,
             &interpolation,
             &self.assets,
             &terrain_style,
@@ -423,11 +422,6 @@ impl ApplicationHandler for App {
             }
         };
         let physical = window.inner_size();
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "HiDPI scale factors fit accurately in f32"
-        )]
-        self.camera.set_scale_factor(window.scale_factor() as f32);
         let mut renderer = match Renderer::new(
             event_loop.owned_display_handle(),
             Arc::clone(&window),
@@ -498,11 +492,6 @@ impl ApplicationHandler for App {
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 let physical = window.inner_size();
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "HiDPI scale factors fit accurately in f32"
-                )]
-                self.camera.set_scale_factor(window.scale_factor() as f32);
                 if let Some(graphics) = &mut self.graphics {
                     graphics.renderer.resize(physical.width, physical.height);
                     if physical.width > 0 && physical.height > 0 && !self.occluded {
