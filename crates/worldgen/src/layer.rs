@@ -93,6 +93,10 @@ fn to_usize(value: i32) -> usize {
     usize::try_from(value).expect("grid sizes are positive")
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

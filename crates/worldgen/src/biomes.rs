@@ -88,6 +88,10 @@ fn most_common(tally: &[usize]) -> BiomeIndex {
     BiomeIndex(u16::try_from(position).expect("a table has fewer than 2^16 biomes"))
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -145,6 +145,10 @@ fn push_obstacle_marks(
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_core::asset::{GroundId, SpriteId};
@@ -207,6 +211,7 @@ mod tests {
             initial_pixels_per_tile: 10.0,
             min_pixels_per_tile: 5.0,
             max_pixels_per_tile: 20.0,
+            art_pixels_per_tile: 10,
         };
         Camera::new(config, terrain().grid(), WorldPoint::new(x, y)).expect("valid camera")
     }

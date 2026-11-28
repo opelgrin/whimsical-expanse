@@ -345,6 +345,10 @@ fn to_usize(index: u32) -> usize {
     usize::try_from(index).expect("supported targets have at least 32-bit usize")
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -107,6 +107,10 @@ impl fmt::Display for PlacementError {
 
 impl Error for PlacementError {}
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

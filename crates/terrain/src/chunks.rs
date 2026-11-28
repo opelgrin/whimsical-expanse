@@ -310,6 +310,10 @@ fn to_index(value: i32) -> usize {
     usize::try_from(value).expect("canonical tiles give non-negative indices")
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_core::grid::TileOffset;

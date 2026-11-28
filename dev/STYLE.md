@@ -94,6 +94,18 @@ Prefer a well-known crate that does the unsafe part with compile-time checks, as
   their contract.
 - **Tests sit next to the code** (`#[cfg(test)] mod tests`). Cross-crate
   scenarios go in a crate's `tests/` directory.
+- **Tests are announced by a banner.** The unit-test module is preceded by a
+  full-width banner, so the boundary between code and tests shows at a glance
+  when scrolling:
+
+  ```rust
+  // ============================================================================
+  // Tests
+  // ============================================================================
+
+  #[cfg(test)]
+  mod tests {
+  ```
 - **Stand-ins say so.** Code written only to fill a gap until later work
   replaces it opens its doc comment with `Stand-in:` and names what replaces
   it, such as "Stand-in: replaced by the calendar types in M1 item 6." Searching

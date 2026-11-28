@@ -429,6 +429,10 @@ impl fmt::Display for InvalidRecipe {
 
 impl Error for InvalidRecipe {}
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_assets::blob::Slot;

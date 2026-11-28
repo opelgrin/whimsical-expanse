@@ -142,6 +142,10 @@ fn report_error(error: &io::Error) {
     eprintln!("error: {error}");
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};

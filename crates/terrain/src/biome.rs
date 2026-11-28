@@ -456,6 +456,10 @@ impl fmt::Display for InvalidBiomeTable {
 
 impl Error for InvalidBiomeTable {}
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

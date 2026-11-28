@@ -39,11 +39,12 @@ const DEFAULT_ASSETS: &str = "cooked/assets.bin";
 const WINDOW_TITLE: &str = "Whimsical Expanse";
 const WINDOW_WIDTH: f64 = 1280.0;
 const WINDOW_HEIGHT: f64 = 720.0;
+const TILE_ART_PIXELS: u32 = 16;
 const INITIAL_PIXELS_PER_TILE: f32 = 48.0; // 3x of 16 px
 const MIN_PIXELS_PER_TILE: f32 = 8.0; // 0.5x of 16 px
 const MAX_PIXELS_PER_TILE: f32 = 192.0; // 12x of 16 px
 const PAN_SPEED_PIXELS_PER_SECOND: f32 = 600.0;
-const ZOOM_STEP_FACTOR: f32 = 1.15;
+const ZOOM_STEPS_PER_LINE: f32 = 1.0;
 const PIXELS_PER_SCROLL_LINE: f32 = 40.0;
 
 fn main() -> ExitCode {
@@ -88,6 +89,7 @@ fn main() -> ExitCode {
             initial_pixels_per_tile: INITIAL_PIXELS_PER_TILE,
             min_pixels_per_tile: MIN_PIXELS_PER_TILE,
             max_pixels_per_tile: MAX_PIXELS_PER_TILE,
+            art_pixels_per_tile: TILE_ART_PIXELS,
         },
         input: InputConfig {
             bindings: default_bindings(),
@@ -95,7 +97,7 @@ fn main() -> ExitCode {
         },
         camera_controls: CameraControlsConfig {
             pan_speed_pixels_per_second: PAN_SPEED_PIXELS_PER_SECOND,
-            zoom_step_factor: ZOOM_STEP_FACTOR,
+            zoom_steps_per_line: ZOOM_STEPS_PER_LINE,
         },
     };
 

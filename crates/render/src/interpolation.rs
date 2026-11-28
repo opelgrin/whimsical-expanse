@@ -116,6 +116,10 @@ fn lerp(from: WorldPoint, to: WorldPoint, fraction: f32, width: f32) -> WorldPoi
     )
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_sim::EntityView;

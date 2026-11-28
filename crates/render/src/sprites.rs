@@ -223,6 +223,10 @@ fn repeats(x: f32, width: f32, range: VisibleTileRange) -> impl Iterator<Item = 
         .take_while(move |&column| column < end_x)
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_assets::{Container, GroundEntry, PADDING, Region, SpriteEntry};
@@ -383,6 +387,7 @@ mod tests {
             initial_pixels_per_tile: 10.0,
             min_pixels_per_tile: 5.0,
             max_pixels_per_tile: 40.0,
+            art_pixels_per_tile: 10,
         };
         Camera::new(config, terrain.grid(), WorldPoint::new(x, y)).expect("valid camera")
     }
