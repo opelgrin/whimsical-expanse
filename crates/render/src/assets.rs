@@ -319,6 +319,10 @@ impl fmt::Display for MissingAssets {
 
 impl Error for MissingAssets {}
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_assets::{GroundEntry, PADDING, SpriteEntry};

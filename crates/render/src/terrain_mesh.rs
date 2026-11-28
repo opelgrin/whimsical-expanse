@@ -179,6 +179,10 @@ pub(crate) fn build_chunk_mesh(terrain: &Terrain, assets: &Assets, chunk: ChunkP
     ChunkMesh { instances, batches }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_assets::{

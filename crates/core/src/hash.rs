@@ -86,6 +86,10 @@ pub type FixedHashMap<K, V> = std::collections::HashMap<K, V, FixedBuildHasher>;
 )]
 pub type FixedHashSet<T> = std::collections::HashSet<T, FixedBuildHasher>;
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

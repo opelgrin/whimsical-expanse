@@ -223,6 +223,10 @@ fn repeats(x: f32, width: f32, range: VisibleTileRange) -> impl Iterator<Item = 
         .take_while(move |&column| column < end_x)
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_assets::{Container, GroundEntry, PADDING, Region, SpriteEntry};

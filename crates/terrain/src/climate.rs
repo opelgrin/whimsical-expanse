@@ -100,6 +100,10 @@ pub fn temperature_at(fields: &Fields, latitude: Latitude, time: TimeOfYear) -> 
     mean + (summer - winter) / 2.0 * libm::cos((time.elapsed() - midsummer) * TAU)
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

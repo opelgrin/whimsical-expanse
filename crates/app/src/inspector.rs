@@ -66,6 +66,10 @@ pub fn inspect(terrain: &Terrain, tile: TilePos) -> Option<TileReport> {
     })
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_core::grid::TileOffset;

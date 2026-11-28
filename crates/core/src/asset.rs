@@ -79,6 +79,10 @@ impl fmt::Display for InvalidAssetName {
 
 impl Error for InvalidAssetName {}
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

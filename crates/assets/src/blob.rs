@@ -203,6 +203,10 @@ pub fn slots() -> impl Iterator<Item = Slot> {
     (0..BLOCK_ROWS).flat_map(|row| (0..BLOCK_COLUMNS).map(move |column| Slot { column, row }))
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;

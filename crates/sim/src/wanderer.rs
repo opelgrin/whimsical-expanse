@@ -80,6 +80,10 @@ impl Wanderer {
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use expanse_terrain::{BiomeIndex, Fields, Footprint, ObstacleIndex, Tile};
