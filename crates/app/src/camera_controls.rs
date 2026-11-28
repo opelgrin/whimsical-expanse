@@ -15,22 +15,28 @@ use crate::input::{InputAction, InputState};
 pub struct CameraControlsConfig {
     /// Keyboard panning speed in logical screen pixels per second.
     pub pan_speed_pixels_per_second: f32,
-    /// Scale multiplier per scroll line, e.g. `1.15`. Above `1.0`, scrolling
+    /// Discrete zoom steps per scroll line, e.g. `1.0`. Above `0.0`, scrolling
     /// up zooms in. Zero or negative disables zoom.
-    pub zoom_step_factor: f32,
+    pub zoom_steps_per_line: f32,
 }
 
 /// Moves a [`Camera`] according to the input of one frame.
 #[derive(Debug, Clone)]
 pub struct CameraControls {
     config: CameraControlsConfig,
+    /// Fractional zoom steps accumulated from smooth scrolling until a whole
+    /// step is reached.
+    scroll_accumulator: f32,
 }
 
 impl CameraControls {
     /// Creates camera controls tuned by `config`.
     #[must_use]
     pub const fn new(config: CameraControlsConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            scroll_accumulator: 0.0,
+        }
     }
 
     /// Applies one frame of `input`, lasting `dt`, to `camera`.
@@ -38,7 +44,7 @@ impl CameraControls {
     /// Dragging applies before zooming, so a zoom anchors on the world point
     /// that is under the cursor once the drag has moved it.
     pub fn update(
-        &self,
+        &mut self,
         input: &InputState,
         dt: Duration,
         viewport: Viewport,
@@ -59,14 +65,33 @@ impl CameraControls {
         camera.pan_by_screen_offset(-motion.dx, -motion.dy);
     }
 
-    fn zoom(&self, input: &InputState, viewport: Viewport, camera: &mut Camera) {
+    fn zoom(&mut self, input: &InputState, viewport: Viewport, camera: &mut Camera) {
         let lines = input.scroll_lines();
-        if self.config.zoom_step_factor <= 0.0 || lines == 0.0 {
+        if self.config.zoom_steps_per_line <= 0.0 || lines == 0.0 {
             return;
         }
-        let factor = self.config.zoom_step_factor.powf(lines);
+        let delta = lines * self.config.zoom_steps_per_line;
+        if self.scroll_accumulator != 0.0 && self.scroll_accumulator.signum() != delta.signum() {
+            self.scroll_accumulator = 0.0;
+        }
+        self.scroll_accumulator += delta;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "accumulated scroll steps in one frame fit comfortably in i32"
+        )]
+        let steps = self.scroll_accumulator.trunc() as i32;
+        if steps == 0 {
+            return;
+        }
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "whole scroll steps per frame are small integers, exact in f32"
+        )]
+        {
+            self.scroll_accumulator -= steps as f32;
+        }
         let anchor = input.cursor().unwrap_or_else(|| viewport.centre());
-        camera.zoom_by(factor, anchor, viewport);
+        camera.step_zoom(steps, anchor, viewport);
     }
 
     /// Diagonal movement is normalized so it moves at the same screen speed as
@@ -121,6 +146,7 @@ mod tests {
                 initial_pixels_per_tile: 50.0,
                 min_pixels_per_tile: 10.0,
                 max_pixels_per_tile: 200.0,
+                art_pixels_per_tile: 10,
             },
             Grid::new(100, 100).expect("a grid with tiles"),
             WorldPoint::new(20.0, 20.0),
@@ -131,7 +157,7 @@ mod tests {
     fn controls() -> CameraControls {
         CameraControls::new(CameraControlsConfig {
             pan_speed_pixels_per_second: 500.0,
-            zoom_step_factor: 2.0,
+            zoom_steps_per_line: 1.0,
         })
     }
 
@@ -162,7 +188,7 @@ mod tests {
         let dt = Duration::from_millis(500);
         let viewport = Viewport::new(800.0, 600.0);
         // 500 px/s * 0.5 s = 250 px; at 50 px/tile = 5 tiles.
-        let controls = controls();
+        let mut controls = controls();
         let mut input = input();
         let mut camera = test_camera();
 
@@ -196,7 +222,7 @@ mod tests {
     /// the cursor) and the cursor moving the camera when no drag is held.
     #[test]
     fn dragging_keeps_the_grabbed_world_point_under_the_cursor() {
-        let controls = controls();
+        let mut controls = controls();
         let mut input = input();
         let mut camera = test_camera();
         let viewport = Viewport::new(800.0, 600.0);
@@ -221,12 +247,13 @@ mod tests {
         assert_close(under_cursor_after.y, grabbed_world.y);
     }
 
-    /// Catches scrolling scaling linearly instead of exponentially, zooming
-    /// around the viewport centre while the cursor is known (or around a stale
-    /// cursor after it left), and a disabled zoom factor still zooming.
+    /// Catches scrolling that drops fractional smooth-scroll events across
+    /// frames, fails to clear partial scroll on direction reversal, zooms around
+    /// the viewport centre while the cursor is known (or around a stale cursor
+    /// after it left), or still zooms when disabled.
     #[test]
-    fn scroll_zooms_exponentially_around_cursor_or_viewport_centre() {
-        let controls = controls();
+    fn scroll_steps_zoom_around_cursor_or_viewport_centre_and_accumulates_smooth_scroll() {
+        let mut controls = controls();
         let mut input = input();
         let mut camera = test_camera();
         let viewport = Viewport::new(800.0, 600.0);
@@ -235,29 +262,53 @@ mod tests {
         input.cursor_moved(cursor);
         let anchor_before = camera.screen_to_world(cursor, viewport);
 
-        // +2 lines; factor 2.0^2 = 4x (50 -> 200 px/tile).
+        // +2 discrete lines from 5x (50 px/tile) -> 7x (70 px/tile).
         input.scrolled(ScrollAmount::Lines(2.0));
         controls.update(&input, dt, viewport, &mut camera);
         input.end_frame();
-        assert_close(camera.pixels_per_tile(), 200.0);
+        assert_close(camera.pixels_per_tile(), 70.0);
         let anchor_after = camera.screen_to_world(cursor, viewport);
         assert_close(anchor_after.x, anchor_before.x);
         assert_close(anchor_after.y, anchor_before.y);
+
+        // Smooth pixel scrolling (20 px = 0.5 lines per frame at 40 px/line)
+        // accumulates across frames and steps once it reaches 1.0 line.
+        input.scrolled(ScrollAmount::Pixels(20.0));
+        controls.update(&input, dt, viewport, &mut camera);
+        input.end_frame();
+        assert_close(camera.pixels_per_tile(), 70.0);
+
+        input.scrolled(ScrollAmount::Pixels(20.0));
+        controls.update(&input, dt, viewport, &mut camera);
+        input.end_frame();
+        assert_close(camera.pixels_per_tile(), 80.0);
+
+        // Reversing direction discards partial scroll from the previous
+        // direction instead of needing to cancel it out first.
+        input.scrolled(ScrollAmount::Pixels(30.0));
+        controls.update(&input, dt, viewport, &mut camera);
+        input.end_frame();
+        input.scrolled(ScrollAmount::Lines(-1.0));
+        controls.update(&input, dt, viewport, &mut camera);
+        input.end_frame();
+        assert_close(camera.pixels_per_tile(), 70.0);
 
         // After the cursor leaves the window, zooming anchors at viewport centre.
         input.cursor_left();
         let centre_before = camera.centre();
         input.scrolled(ScrollAmount::Lines(-1.0));
         controls.update(&input, dt, viewport, &mut camera);
-        assert_close(camera.pixels_per_tile(), 100.0);
+        input.end_frame();
+        assert_close(camera.pixels_per_tile(), 60.0);
         assert_close(camera.centre().x, centre_before.x);
         assert_close(camera.centre().y, centre_before.y);
 
         let before_disabled = camera.clone();
-        let disabled = CameraControls::new(CameraControlsConfig {
+        let mut disabled = CameraControls::new(CameraControlsConfig {
             pan_speed_pixels_per_second: 500.0,
-            zoom_step_factor: 0.0,
+            zoom_steps_per_line: 0.0,
         });
+        input.scrolled(ScrollAmount::Lines(2.0));
         disabled.update(&input, dt, viewport, &mut camera);
         assert_eq!(camera, before_disabled);
     }

@@ -343,6 +343,7 @@ impl App {
             return;
         };
         let (viewport, scale_factor) = Self::current_viewport(&graphics.window);
+        self.camera.set_scale_factor(scale_factor);
         self.apply_input(dt, viewport);
 
         let (Some(graphics), Some(simulation)) = (&mut self.graphics, &self.simulation) else {
@@ -422,6 +423,11 @@ impl ApplicationHandler for App {
             }
         };
         let physical = window.inner_size();
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "HiDPI scale factors fit accurately in f32"
+        )]
+        self.camera.set_scale_factor(window.scale_factor() as f32);
         let mut renderer = match Renderer::new(
             event_loop.owned_display_handle(),
             Arc::clone(&window),
@@ -492,6 +498,11 @@ impl ApplicationHandler for App {
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 let physical = window.inner_size();
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "HiDPI scale factors fit accurately in f32"
+                )]
+                self.camera.set_scale_factor(window.scale_factor() as f32);
                 if let Some(graphics) = &mut self.graphics {
                     graphics.renderer.resize(physical.width, physical.height);
                     if physical.width > 0 && physical.height > 0 && !self.occluded {
@@ -643,6 +654,7 @@ mod tests {
                 initial_pixels_per_tile: pixels_per_tile,
                 min_pixels_per_tile: 5.0,
                 max_pixels_per_tile: 20.0,
+                art_pixels_per_tile: 10,
             },
         )
         .expect("valid camera");
